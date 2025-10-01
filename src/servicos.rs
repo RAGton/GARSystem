@@ -80,9 +80,9 @@ pub fn criar_usuario(
             "Usuário deve ter 3+ caracteres.".to_string(),
         ));
     }
-    if senha.len() < 4 {
+    if senha.len() < 8 {
         return Err(ErroAplicacao::Validacao(
-            "Senha deve ter 4+ caracteres.".to_string(),
+            "Senha deve ter 8+ caracteres.".to_string(),
         ));
     }
     banco_de_dados::criar_usuario(nome_usuario, senha, papel)

@@ -42,7 +42,7 @@ pub struct AplicativoPrincipal {
     envio_db: Sender<(String, String)>,
     recebimento_db: Receiver<Result<PapelUsuario, ErroAplicacao>>,
     tema_atual: Tema,
-    papel_usuario_logado: PapelUsuario,
+    papel_usuario_logado: Option<PapelUsuario>,
 }
 
 impl AplicativoPrincipal {
@@ -55,12 +55,17 @@ impl AplicativoPrincipal {
             envio_db,
             recebimento_db,
             tema_atual: Tema::Escuro,
-            papel_usuario_logado: PapelUsuario::ADM,
+            papel_usuario_logado: None,
         }
     }
 
     fn voltar_para_dashboard(&mut self) {
-        self.estado_tela = TelaDashboard::new(self.papel_usuario_logado).into();
+        if let Some(papel) = self.papel_usuario_logado {
+            self.estado_tela = TelaDashboard::new(papel).into();
+        } else {
+            // Se não há usuário logado, volta para a tela de login.
+            self.estado_tela = TelaLogin::new(self.envio_db.clone()).into();
+        }
     }
 }
 
@@ -75,8 +80,7 @@ impl eframe::App for AplicativoPrincipal {
 
         if !matches!(&self.estado_tela, EstadoTela::Login(_)) {
             egui::TopBottomPanel::top("barra_superior_principal").show(ctx, |ui| {
-                // CORRIGIDO: Esta é a API moderna para criar uma barra de menu
-                egui::menu::bar(ui, |ui| {
+                ui.horizontal_centered(|ui| {
                     if !matches!(&self.estado_tela, EstadoTela::Dashboard(_)) {
                         if ui.button("⬅ Menu Principal").clicked() {
                             self.voltar_para_dashboard();
@@ -102,7 +106,7 @@ impl eframe::App for AplicativoPrincipal {
                         }
                     });
                 });
-            });
+            }); // CORRIGIDO: A API `egui::menu::bar` foi descontinuada. A lógica foi movida para um `ui.horizontal_centered` que tem efeito similar.
         }
 
         let mut proximo_estado = None;
@@ -110,14 +114,14 @@ impl eframe::App for AplicativoPrincipal {
             EstadoTela::Login(tela) => {
                 tela.update(ctx, _frame, &self.recebimento_db);
                 if let Some(Ok(papel)) = tela.obter_resultado_login() {
-                    self.papel_usuario_logado = papel;
+                    self.papel_usuario_logado = Some(papel);
                     proximo_estado = Some(TelaDashboard::new(papel).into());
 
                     ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([1024.0, 768.0].into()));
                     ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
                         [800.0, 600.0].into(),
                     ));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([1024.0, 768.0].into()));
                 }
             }
             EstadoTela::Dashboard(tela) => match tela.update(ctx, _frame) {
@@ -135,24 +139,23 @@ impl eframe::App for AplicativoPrincipal {
             },
             EstadoTela::Admin(tela) => match tela.update(ctx, _frame) {
                 AcaoAdmin::Voltar => self.voltar_para_dashboard(),
-                // O botão de deslogar na tela de admin agora dispara a ação global
-                AcaoAdmin::Deslogar => acao_global = AcaoGlobal::Deslogar,
+                // CORRIGIDO: O braço `Deslogar` foi removido pois não existe mais no enum AcaoAdmin
                 AcaoAdmin::Nenhuma => {}
             },
             EstadoTela::Tecnico(tela) => {
-                tela.update(ctx, _frame);
+                let _ = tela.update(ctx, _frame);
             }
             EstadoTela::Financeiro(tela) => {
-                tela.update(ctx, _frame);
+                let _ = tela.update(ctx, _frame);
             }
             EstadoTela::Vendedor(tela) => {
-                tela.update(ctx, _frame);
+                let _ = tela.update(ctx, _frame);
             }
             EstadoTela::Gerente(tela) => {
-                tela.update(ctx, _frame);
+                let _ = tela.update(ctx, _frame);
             }
             EstadoTela::Atendente(tela) => {
-                tela.update(ctx, _frame);
+                let _ = tela.update(ctx, _frame);
             }
         }
 
@@ -162,7 +165,9 @@ impl eframe::App for AplicativoPrincipal {
 
         if acao_global == AcaoGlobal::Deslogar {
             self.estado_tela = TelaLogin::new(self.envio_db.clone()).into();
+            self.papel_usuario_logado = None;
             ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
+            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize([0.0, 0.0].into()));
             ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([624.0, 468.0].into()));
         }
     }

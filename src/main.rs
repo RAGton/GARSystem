@@ -28,15 +28,16 @@ fn main() -> Result<(), eframe::Error> {
 
     let opcoes_janela = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([624.0, 468.0])
-            .with_resizable(false), // A janela já começa não redimensionável
+            .with_inner_size([400.0, 600.0])
+            .with_min_inner_size([600.0, 600.0])
+            .with_resizable(true), // A janela já começa não redimensionável
         centered: true, // A centralização agora é um campo separado
         ..Default::default()
     };
 
     println!("Iniciando a interface gráfica...");
     eframe::run_native(
-        "Senior System - NasthyCloud",
+        "Senior System - RAG",
         opcoes_janela,
         // A closure de criação agora precisa retornar um `Ok`
         Box::new(|_cc| Ok(Box::new(AplicativoPrincipal::new(envio_ui, recebimento_ui)))),

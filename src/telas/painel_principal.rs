@@ -8,9 +8,7 @@ pub enum AcaoDashboard {
     NavegarPara(AlvoNavegacao),
 }
 
-// O aviso sobre variantes não construídas desaparecerá quando você implementar
-// todos os botões abaixo.
-#[allow(dead_code)]
+#[allow(dead_code)] // Silencia o aviso sobre variantes não usadas
 pub enum AlvoNavegacao {
     Admin,
     Tecnico,
@@ -75,18 +73,20 @@ fn botao_menu(ui: &mut egui::Ui, icone: &str, texto: &str) -> egui::Response {
             .fill(visuals.bg_fill)
             .stroke(visuals.bg_stroke);
 
-        // CORRIGIDO: Esta é a API moderna para desenhar dentro de um retângulo.
-        // A função `show` do frame agora é chamada dentro de `allocate_ui_at_rect`.
-        ui.allocate_ui_at_rect(rect, |ui| {
-            frame.show(ui, |ui| {
-                ui.centered_and_justified(|ui| {
-                    ui.vertical_centered(|ui| {
-                        ui.label(egui::RichText::new(icone).size(40.0));
-                        ui.add_space(5.0);
-                        ui.label(egui::RichText::new(texto).strong());
+        // CORRIGIDO: A API `allocate_ui_at_rect` foi descontinuada.
+        // A abordagem moderna é usar `ui.put()` com uma closure que desenha o widget.
+        let _ = ui.put(rect, |ui: &mut egui::Ui| {
+            frame
+                .show(ui, |ui: &mut egui::Ui| {
+                    ui.centered_and_justified(|ui| {
+                        ui.vertical_centered(|ui| {
+                            ui.label(egui::RichText::new(icone).size(40.0));
+                            ui.add_space(5.0);
+                            ui.label(egui::RichText::new(texto).strong());
+                        });
                     });
-                });
-            });
+                })
+                .response
         });
     }
     response

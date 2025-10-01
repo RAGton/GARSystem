@@ -17,7 +17,10 @@ fn carregar_imagem_de_arquivo(caminho: &std::path::Path) -> Result<ColorImage, i
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum EstadoLogin {
-    Ocioso, EmProgresso, Sucesso, Falha(String),
+    Ocioso,
+    EmProgresso,
+    Sucesso,
+    Falha(String),
 }
 
 pub struct TelaLogin {
@@ -71,11 +74,14 @@ impl TelaLogin {
             ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
                 ui.add_space(ui.available_height() * 0.1);
                 if let Some(logo) = &self.logo {
-                    ui.add(egui::Image::new(logo).max_size(egui::vec2(240.0, 128.0)));
+                    ui.add(egui::Image::new(logo).max_size(egui::vec2(280.0, 158.0)));
                 }
                 ui.add_space(20.0);
-                ui.heading(egui::RichText::new("Senior System").strong().size(32.0));
-                ui.label(egui::RichText::new("Bem-vindo! Faça o login para continuar.").italics());
+                ui.label(
+                    egui::RichText::new("Bem-vindo! Faça o login para continuar.")
+                        .italics()
+                        .size(20.0),
+                );
                 ui.add_space(30.0);
 
                 ui.add_enabled_ui(!matches!(self.estado, EstadoLogin::EmProgresso), |ui| {
@@ -94,10 +100,8 @@ impl TelaLogin {
                                 _ => "   Entrar   ",
                             };
                             let frame_botao_entrar = egui::Frame::new()
-                                // CORRIGIDO: A margem agora é um vec2
                                 .inner_margin(egui::vec2(12.0, 6.0))
                                 .fill(ui.style().visuals.selection.bg_fill)
-                                // CORRIGIDO: Método renomeado para .corner_radius
                                 .corner_radius(5.0);
                             if frame_botao_entrar
                                 .show(ui, |ui| {
@@ -133,15 +137,15 @@ impl TelaLogin {
                 ui.separator();
                 ui.horizontal(|ui| {
                     ui.label(
-                        egui::RichText::new("© NasthyCloud")
+                        egui::RichText::new("© RAG - 2025")
                             .color(egui::Color32::GRAY)
-                            .size(12.0),
+                            .size(20.0),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         ui.label(
                             egui::RichText::new(format!("Versão: {}", env!("CARGO_PKG_VERSION")))
                                 .color(egui::Color32::GRAY)
-                                .size(12.0),
+                                .size(20.0),
                         );
                     });
                 });

@@ -5,7 +5,7 @@ use eframe::egui;
 
 pub enum AcaoAdmin {
     Nenhuma,
-    Deslogar,
+   // Deslogar,
     Voltar,
 }
 
