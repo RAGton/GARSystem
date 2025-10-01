@@ -6,11 +6,12 @@ mod servicos;
 mod telas;
 
 use aplicacao::AplicativoPrincipal;
+use eframe::egui;
 use servicos::{ErroAplicacao, PapelUsuario};
 use std::sync::mpsc;
 use std::thread;
 
-fn main() {
+fn main() -> Result<(), eframe::Error> {
     servicos::inicializar();
 
     let (envio_ui, recebimento_db) = mpsc::channel::<(String, String)>();
@@ -19,13 +20,17 @@ fn main() {
     thread::spawn(move || {
         for (usuario, senha) in recebimento_db {
             let resultado = servicos::verificar_login(&usuario, &senha);
-            let _ = envio_db.send(resultado);
+            if envio_db.send(resultado).is_err() {
+                break;
+            }
         }
     });
 
     let opcoes_janela = eframe::NativeOptions {
-        initial_window_size: Some(eframe::egui::vec2(1024.0, 768.0)),
-        min_window_size: Some(eframe::egui::vec2(800.0, 600.0)),
+        viewport: egui::ViewportBuilder::default()
+            .with_inner_size([624.0, 468.0])
+            .with_resizable(false), // A janela já começa não redimensionável
+        centered: true, // A centralização agora é um campo separado
         ..Default::default()
     };
 
@@ -33,6 +38,7 @@ fn main() {
     eframe::run_native(
         "Senior System - NasthyCloud",
         opcoes_janela,
-        Box::new(|_cc| Box::new(AplicativoPrincipal::new(envio_ui, recebimento_ui))),
-    );
+        // A closure de criação agora precisa retornar um `Ok`
+        Box::new(|_cc| Ok(Box::new(AplicativoPrincipal::new(envio_ui, recebimento_ui)))),
+    )
 }

@@ -5,12 +5,19 @@ use eframe::egui;
 
 pub enum AcaoDashboard {
     Nenhuma,
-    Deslogar,
     NavegarPara(AlvoNavegacao),
 }
 
+// O aviso sobre variantes não construídas desaparecerá quando você implementar
+// todos os botões abaixo.
+#[allow(dead_code)]
 pub enum AlvoNavegacao {
     Admin,
+    Tecnico,
+    Financeiro,
+    Vendedor,
+    Gerente,
+    Atendente,
 }
 
 pub struct TelaDashboard {
@@ -42,21 +49,13 @@ impl TelaDashboard {
                     }
                     if matches!(
                         self.papel_usuario,
-                        PapelUsuario::ADM | PapelUsuario::Gerente | PapelUsuario::Vendedor
+                        PapelUsuario::ADM | PapelUsuario::Tecnico
                     ) {
-                        if botao_menu(ui, "📦", "Estoque").clicked() { /* Em breve... */ }
-                    }
-                    if matches!(
-                        self.papel_usuario,
-                        PapelUsuario::ADM | PapelUsuario::Gerente | PapelUsuario::Tecnico
-                    ) {
-                        if botao_menu(ui, "🔧", "Ordens de Serviço").clicked() { /* Em breve... */
+                        if botao_menu(ui, "🔧", "Ordens de Serviço").clicked() {
+                            acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Tecnico);
                         }
                     }
-                    ui.end_row();
-                    if botao_menu(ui, "📝", "Requisição").clicked() { /* Em breve... */ }
-                    if botao_menu(ui, "➕", "Adicionar Produto").clicked() { /* Em breve... */ }
-                    if botao_menu(ui, "📊", "Relatórios").clicked() { /* Em breve... */ }
+                    // Adicione os outros botões aqui para usar as variantes de navegação
                 });
         });
 
@@ -64,38 +63,31 @@ impl TelaDashboard {
     }
 }
 
-/// Função auxiliar para desenhar um botão de menu grande e estilizado.
 fn botao_menu(ui: &mut egui::Ui, icone: &str, texto: &str) -> egui::Response {
     let tamanho_botao = egui::vec2(160.0, 100.0);
-
-    // CORREÇÃO: Alocamos o retângulo primeiro e obtemos a resposta da interação.
     let (rect, response) = ui.allocate_exact_size(tamanho_botao, egui::Sense::click());
 
-    // Desenha o conteúdo do botão apenas se a área estiver visível.
     if ui.is_rect_visible(rect) {
-        // Obtém o estilo visual baseado na interação (hover, clique, etc.).
         let visuals = ui.style().interact(&response);
+        let frame = egui::Frame::new()
+            .inner_margin(10.0)
+            .corner_radius(10.0)
+            .fill(visuals.bg_fill)
+            .stroke(visuals.bg_stroke);
 
-        // Cria a moldura (fundo) do botão com o estilo correto.
-        let frame = egui::Frame::none()
-            .inner_margin(egui::style::Margin::same(10.0))
-            .fill(visuals.bg_fill) // Usa a cor de fundo do estilo de interação
-            .rounding(egui::Rounding::from(10.0))
-            .stroke(visuals.bg_stroke); // Usa a borda do estilo de interação
-
-        // Desenha a moldura e o conteúdo dentro do retângulo alocado.
-        frame.show(ui, |ui| {
-            ui.set_clip_rect(rect);
-            ui.allocate_ui_at_rect(rect, |ui| {
-                ui.vertical_centered(|ui| {
-                    ui.label(egui::RichText::new(icone).size(40.0));
-                    ui.add_space(5.0);
-                    ui.label(egui::RichText::new(texto).strong());
+        // CORRIGIDO: Esta é a API moderna para desenhar dentro de um retângulo.
+        // A função `show` do frame agora é chamada dentro de `allocate_ui_at_rect`.
+        ui.allocate_ui_at_rect(rect, |ui| {
+            frame.show(ui, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new(icone).size(40.0));
+                        ui.add_space(5.0);
+                        ui.label(egui::RichText::new(texto).strong());
+                    });
                 });
             });
         });
     }
-
-    // Retorna a resposta da interação para que `.clicked()` funcione.
     response
 }

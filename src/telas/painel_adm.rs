@@ -9,6 +9,7 @@ pub enum AcaoAdmin {
     Voltar,
 }
 
+// ... (struct FormularioNovoUsuario e impl Default não mudam) ...
 struct FormularioNovoUsuario {
     nome_usuario: String,
     senha: String,
@@ -51,114 +52,112 @@ impl TelaAdmin {
 
         egui::TopBottomPanel::top("painel_superior_adm").show(ctx, |ui| {
             ui.horizontal(|ui| {
+                // O botão de voltar na barra de topo global já faz isso, mas podemos manter por redundância.
                 if ui.button("⬅ Voltar").clicked() {
                     acao = AcaoAdmin::Voltar;
                 }
                 ui.separator();
                 ui.heading("Painel de Administração");
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Deslogar").clicked() {
-                        acao = AcaoAdmin::Deslogar;
-                    }
-                });
             });
         });
 
         let modal_aberto = self.mostrar_janela_confirmacao;
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.set_enabled(!modal_aberto);
+            // Nova API para habilitar/desabilitar
+            ui.add_enabled_ui(!modal_aberto, |ui| {
+                ui.group(|ui| {
+                    ui.heading("Criar Novo Usuário");
+                    ui.add_space(10.0);
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Usuário:").strong());
+                        ui.text_edit_singleline(&mut self.formulario.nome_usuario);
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Senha:   ").strong());
+                        ui.add(
+                            egui::TextEdit::singleline(&mut self.formulario.senha).password(true),
+                        );
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(egui::RichText::new("Papel:   ").strong());
+                        egui::ComboBox::from_label("")
+                            .selected_text(format!("{:?}", self.formulario.papel_selecionado))
+                            .show_ui(ui, |ui| {
+                                for papel in PapelUsuario::todos() {
+                                    ui.selectable_value(
+                                        &mut self.formulario.papel_selecionado,
+                                        *papel,
+                                        format!("{:?}", papel),
+                                    );
+                                }
+                            });
+                    });
+                    ui.add_space(10.0);
+                    if ui.button("Criar Usuário").clicked() {
+                        let form = &mut self.formulario;
+                        if !form.nome_usuario.is_empty() && !form.senha.is_empty() {
+                            match servicos::criar_usuario(
+                                &form.nome_usuario,
+                                &form.senha,
+                                form.papel_selecionado,
+                            ) {
+                                Ok(_) => {
+                                    form.mensagem =
+                                        format!("Usuário '{}' criado!", form.nome_usuario);
+                                    form.e_erro = false;
+                                    self.usuarios = servicos::listar_usuarios();
+                                    *form = FormularioNovoUsuario::default();
+                                }
+                                Err(e) => {
+                                    form.mensagem = e.to_string();
+                                    form.e_erro = true;
+                                }
+                            }
+                        } else {
+                            form.mensagem = "Usuário e senha são obrigatórios.".to_string();
+                            form.e_erro = true;
+                        }
+                    }
+                    if !self.formulario.mensagem.is_empty() {
+                        let cor = if self.formulario.e_erro {
+                            egui::Color32::RED
+                        } else {
+                            egui::Color32::GREEN
+                        };
+                        ui.label(egui::RichText::new(&self.formulario.mensagem).color(cor));
+                    }
+                });
 
-            // CORREÇÃO: Conteúdo do formulário inserido aqui
-            ui.group(|ui| {
-                ui.heading("Criar Novo Usuário");
-                ui.add_space(10.0);
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Usuário:").strong());
-                    ui.text_edit_singleline(&mut self.formulario.nome_usuario);
-                });
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Senha:   ").strong());
-                    ui.add(egui::TextEdit::singleline(&mut self.formulario.senha).password(true));
-                });
-                ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Papel:   ").strong());
-                    egui::ComboBox::from_label("")
-                        .selected_text(format!("{:?}", self.formulario.papel_selecionado))
-                        .show_ui(ui, |ui| {
-                            for papel in PapelUsuario::todos() {
-                                ui.selectable_value(
-                                    &mut self.formulario.papel_selecionado,
-                                    *papel,
-                                    format!("{:?}", papel),
-                                );
+                ui.separator();
+                ui.heading("Usuários Existentes");
+
+                egui::ScrollArea::vertical().show(ui, |ui| {
+                    let mut usuario_marcado_para_remocao = None;
+                    for usuario in &self.usuarios {
+                        ui.horizontal(|ui| {
+                            ui.label(format!(
+                                "ID: {} - Usuário: {}",
+                                usuario.id, usuario.nome_usuario
+                            ));
+                            if usuario.nome_usuario != "admin" {
+                                if ui.button("Remover").clicked() {
+                                    usuario_marcado_para_remocao =
+                                        Some(usuario.nome_usuario.clone());
+                                }
                             }
                         });
-                });
-                ui.add_space(10.0);
-                if ui.button("Criar Usuário").clicked() {
-                    let form = &mut self.formulario;
-                    if !form.nome_usuario.is_empty() && !form.senha.is_empty() {
-                        match servicos::criar_usuario(
-                            &form.nome_usuario,
-                            &form.senha,
-                            form.papel_selecionado,
-                        ) {
-                            Ok(_) => {
-                                form.mensagem = format!("Usuário '{}' criado!", form.nome_usuario);
-                                form.e_erro = false;
-                                self.usuarios = servicos::listar_usuarios();
-                                *form = FormularioNovoUsuario::default();
-                            }
-                            Err(e) => {
-                                form.mensagem = e.to_string();
-                                form.e_erro = true;
-                            }
-                        }
-                    } else {
-                        form.mensagem = "Usuário e senha são obrigatórios.".to_string();
-                        form.e_erro = true;
+                        ui.separator();
                     }
-                }
-                if !self.formulario.mensagem.is_empty() {
-                    let cor = if self.formulario.e_erro {
-                        egui::Color32::RED
-                    } else {
-                        egui::Color32::GREEN
-                    };
-                    ui.label(egui::RichText::new(&self.formulario.mensagem).color(cor));
-                }
-            });
-
-            ui.separator();
-            ui.heading("Usuários Existentes");
-
-            // CORREÇÃO: Conteúdo da lista de usuários inserido aqui
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                let mut usuario_marcado_para_remocao = None;
-                for usuario in &self.usuarios {
-                    ui.horizontal(|ui| {
-                        ui.label(format!(
-                            "ID: {} - Usuário: {}",
-                            usuario.id, usuario.nome_usuario
-                        ));
-                        if usuario.nome_usuario != "admin" {
-                            if ui.button("Remover").clicked() {
-                                usuario_marcado_para_remocao = Some(usuario.nome_usuario.clone());
-                            }
-                        }
-                    });
-                    ui.separator();
-                }
-                if let Some(nome_usuario) = usuario_marcado_para_remocao {
-                    self.usuario_para_remover = Some(nome_usuario);
-                    self.mostrar_janela_confirmacao = true;
-                }
+                    if let Some(nome_usuario) = usuario_marcado_para_remocao {
+                        self.usuario_para_remover = Some(nome_usuario);
+                        self.mostrar_janela_confirmacao = true;
+                    }
+                });
             });
         });
 
         if self.mostrar_janela_confirmacao {
             if let Some(usuario_clone) = self.usuario_para_remover.clone() {
-                // CORREÇÃO: Conteúdo da janela modal inserido aqui
                 egui::Window::new("Confirmar Remoção")
                     .collapsible(false)
                     .resizable(false)
@@ -196,7 +195,6 @@ impl TelaAdmin {
                 self.mostrar_janela_confirmacao = false;
             }
         }
-
         acao
     }
 }

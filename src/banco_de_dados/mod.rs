@@ -6,6 +6,7 @@ use once_cell::sync::Lazy;
 use std::sync::Mutex;
 
 #[derive(Debug)]
+#[allow(dead_code)]
 struct Usuario {
     id: i32,
     nome_usuario: String,
