@@ -8,14 +8,14 @@ pub enum AcaoDashboard {
     NavegarPara(AlvoNavegacao),
 }
 
-#[allow(dead_code)] // Silencia o aviso sobre variantes não usadas
+// Variantes de navegação finais: Admin, Tecnico, Financeiro, Comercial, Gerencia
+#[derive(Eq, PartialEq, Hash, Clone, Copy, Debug)]
 pub enum AlvoNavegacao {
     Admin,
     Tecnico,
     Financeiro,
-    Vendedor,
-    Gerente,
-    Atendente,
+    Comercial,
+    Gerencia,
 }
 
 pub struct TelaDashboard {
@@ -40,20 +40,43 @@ impl TelaDashboard {
                 .spacing([40.0, 40.0])
                 .striped(false)
                 .show(ui, |ui| {
-                    if self.papel_usuario == PapelUsuario::ADM {
+                    if self.papel_usuario == PapelUsuario::Administrador {
                         if botao_menu(ui, "👤", "Gerenciar Usuários").clicked() {
                             acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Admin);
                         }
                     }
                     if matches!(
                         self.papel_usuario,
-                        PapelUsuario::ADM | PapelUsuario::Tecnico
+                        PapelUsuario::Administrador | PapelUsuario::Tecnico
                     ) {
                         if botao_menu(ui, "🔧", "Ordens de Serviço").clicked() {
                             acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Tecnico);
                         }
                     }
-                    // Adicione os outros botões aqui para usar as variantes de navegação
+                    if matches!(
+                        self.papel_usuario,
+                        PapelUsuario::Administrador | PapelUsuario::Comercial
+                    ) {
+                        if botao_menu(ui, "🛒", "Comercial").clicked() {
+                            acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Comercial);
+                        }
+                    }
+                    if matches!(
+                        self.papel_usuario,
+                        PapelUsuario::Administrador | PapelUsuario::Financeiro
+                    ) {
+                        if botao_menu(ui, "💳", "Financeiro").clicked() {
+                            acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Financeiro);
+                        }
+                    }
+                    if matches!(
+                        self.papel_usuario,
+                        PapelUsuario::Administrador | PapelUsuario::Gerencia
+                    ) {
+                        if botao_menu(ui, "📈", "Gerência").clicked() {
+                            acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Gerencia);
+                        }
+                    }
                 });
         });
 
@@ -73,8 +96,6 @@ fn botao_menu(ui: &mut egui::Ui, icone: &str, texto: &str) -> egui::Response {
             .fill(visuals.bg_fill)
             .stroke(visuals.bg_stroke);
 
-        // CORRIGIDO: A API `allocate_ui_at_rect` foi descontinuada.
-        // A abordagem moderna é usar `ui.put()` com uma closure que desenha o widget.
         let _ = ui.put(rect, |ui: &mut egui::Ui| {
             frame
                 .show(ui, |ui: &mut egui::Ui| {

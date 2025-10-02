@@ -1,5 +1,4 @@
 // src/main.rs
-
 mod aplicacao;
 mod banco_de_dados;
 mod servicos;
@@ -28,10 +27,10 @@ fn main() -> Result<(), eframe::Error> {
 
     let opcoes_janela = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([400.0, 600.0])
-            .with_min_inner_size([600.0, 600.0])
-            .with_resizable(true), // A janela já começa não redimensionável
-        centered: true, // A centralização agora é um campo separado
+            .with_inner_size([400.0, 500.0])
+            .with_resizable(true)
+            .with_title("Senior System - RAG"),
+        centered: true,
         ..Default::default()
     };
 
@@ -39,7 +38,6 @@ fn main() -> Result<(), eframe::Error> {
     eframe::run_native(
         "Senior System - RAG",
         opcoes_janela,
-        // A closure de criação agora precisa retornar um `Ok`
         Box::new(|_cc| Ok(Box::new(AplicativoPrincipal::new(envio_ui, recebimento_ui)))),
     )
 }

@@ -1,95 +1,96 @@
 // src/servicos.rs
-use crate::banco_de_dados;
-use std::fmt;
 
-#[derive(Clone, Debug)]
+use thiserror::Error;
+
+// --- ESTRUTURAS DE DADOS ADICIONADAS ---
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StatusOS {
+    Aberta,
+    EmAndamento,
+    AguardandoPeca,
+    Finalizada,
+    Cancelada,
+}
+
+// Representa uma Ordem de Serviço.
+#[derive(Debug, Clone)]
+pub struct OrdemServico {
+    pub id: u32,
+    pub cliente: String,
+    pub equipamento: String,
+    pub defeito_relatado: String,
+    pub status: StatusOS,
+}
+
+// --- FIM DAS ESTRUTURAS DE DADOS ADICIONADAS ---
+
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
+pub enum PapelUsuario {
+    Administrador,
+    Gerencia,
+    Tecnico,
+    Financeiro,
+    Comercial,
+}
+
+impl PapelUsuario {
+    pub fn iter() -> impl Iterator<Item = &'static Self> {
+        static PAPEIS: &[PapelUsuario] = &[
+            PapelUsuario::Administrador,
+            PapelUsuario::Gerencia,
+            PapelUsuario::Tecnico,
+            PapelUsuario::Financeiro,
+            PapelUsuario::Comercial,
+        ];
+        PAPEIS.iter()
+    }
+}
+
 pub struct InfoUsuario {
     pub id: i32,
     pub nome_usuario: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Copy)]
-pub enum PapelUsuario {
-    ADM,
-    Tecnico,
-    Financeiro,
-    Vendedor,
-    Gerente,
-    Atendente,
-}
-
-impl PapelUsuario {
-    pub fn todos() -> &'static [PapelUsuario] {
-        &[
-            Self::ADM,
-            Self::Tecnico,
-            Self::Financeiro,
-            Self::Vendedor,
-            Self::Gerente,
-            Self::Atendente,
-        ]
-    }
-}
-
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Error, Debug, Clone)]
 pub enum ErroAplicacao {
+    #[error("Não foi possível conectar ao banco de dados.")]
     BancoDeDadosConexao,
+    #[error("Erro na consulta ao banco de dados: {0}")]
     BancoDeDadosQuery(String),
+    #[error("Usuário não encontrado.")]
     UsuarioNaoEncontrado,
+    #[error("A senha fornecida é inválida.")]
     SenhaInvalida,
+    #[error("Este nome de usuário já está em uso.")]
     UsuarioJaExiste,
+    #[error("O usuário 'admin' não pode ser removido.")]
     NaoPodeRemoverAdmin,
-    Validacao(String),
+    #[error("Falha ao gerar o hash da senha: {0}")]
+    FalhaNoHash(String),
+    #[error("Erro desconhecido: {0}")]
     Desconhecido(String),
 }
 
-impl fmt::Display for ErroAplicacao {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        let mensagem = match self {
-            Self::BancoDeDadosConexao => {
-                "[BD-01] Falha de conexão com o banco de dados.".to_string()
-            }
-            Self::BancoDeDadosQuery(e) => format!("[BD-02] Erro interno no banco de dados: {}", e),
-            Self::UsuarioNaoEncontrado | Self::SenhaInvalida => {
-                "[AUTH-01] Usuário ou senha inválidos.".to_string()
-            }
-            Self::UsuarioJaExiste => "[USR-01] Este nome de usuário já está em uso.".to_string(),
-            Self::NaoPodeRemoverAdmin => {
-                "[USR-02] O usuário 'admin' não pode ser removido.".to_string()
-            }
-            Self::Validacao(msg) => format!("[VAL-01] {}", msg),
-            Self::Desconhecido(msg) => format!("[ERR-99] Ocorreu um erro inesperado: {}", msg),
-        };
-        write!(f, "{}", mensagem)
+impl From<mysql::Error> for ErroAplicacao {
+    fn from(err: mysql::Error) -> Self {
+        ErroAplicacao::BancoDeDadosQuery(err.to_string())
     }
 }
 
+// Funções de fachada
 pub fn inicializar() {
-    banco_de_dados::inicializar();
+    crate::banco_de_dados::inicializar();
 }
-pub fn verificar_login(nome_usuario: &str, senha: &str) -> Result<PapelUsuario, ErroAplicacao> {
-    banco_de_dados::verificar_senha_e_obter_papel(nome_usuario, senha)
+pub fn verificar_login(u: &str, s: &str) -> Result<PapelUsuario, ErroAplicacao> {
+    crate::banco_de_dados::verificar_senha_e_obter_papel(u, s)
 }
-pub fn criar_usuario(
-    nome_usuario: &str,
-    senha: &str,
-    papel: PapelUsuario,
-) -> Result<(), ErroAplicacao> {
-    if nome_usuario.len() < 3 {
-        return Err(ErroAplicacao::Validacao(
-            "Usuário deve ter 3+ caracteres.".to_string(),
-        ));
-    }
-    if senha.len() < 8 {
-        return Err(ErroAplicacao::Validacao(
-            "Senha deve ter 8+ caracteres.".to_string(),
-        ));
-    }
-    banco_de_dados::criar_usuario(nome_usuario, senha, papel)
+pub fn criar_usuario(u: &str, s: &str, p: PapelUsuario) -> Result<(), ErroAplicacao> {
+    crate::banco_de_dados::criar_usuario(u, s, p)
 }
 pub fn listar_usuarios() -> Vec<InfoUsuario> {
-    banco_de_dados::listar_todos_usuarios()
+    crate::banco_de_dados::listar_todos_usuarios()
 }
-pub fn remover_usuario(nome_usuario: &str) -> Result<(), ErroAplicacao> {
-    banco_de_dados::remover_usuario(nome_usuario)
+pub fn remover_usuario(u: &str) -> Result<(), ErroAplicacao> {
+    crate::banco_de_dados::remover_usuario(u)
 }

@@ -80,7 +80,7 @@ impl TelaLogin {
                 ui.label(
                     egui::RichText::new("Bem-vindo! Faça o login para continuar.")
                         .italics()
-                        .size(20.0),
+                        .size(16.0),
                 );
                 ui.add_space(30.0);
 

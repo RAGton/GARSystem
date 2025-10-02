@@ -2,33 +2,20 @@
 
 use crate::servicos::{ErroAplicacao, PapelUsuario};
 use crate::telas::{
+    componentes::sidebar::{self, AcaoSidebar},
     login::TelaLogin,
-    painel_adm::{AcaoAdmin, TelaAdmin},
-    painel_atendente::TelaAtendente,
-    painel_financeiro::TelaFinanceiro,
-    painel_gerente::TelaGerente,
-    painel_principal::{AcaoDashboard, AlvoNavegacao, TelaDashboard},
-    painel_tecnico::TelaTecnico,
-    painel_vendedor::TelaVendedor,
+    painel_adm::TelaAdmin,
+    painel_principal::{self, TelaDashboard},
+    painel_tecnico::TelaTecnico, // NOVO: Importa a nova tela
 };
 use eframe::egui;
 use std::sync::mpsc::{Receiver, Sender};
-
-#[derive(PartialEq)]
-pub enum AcaoGlobal {
-    Nenhuma,
-    Deslogar,
-}
 
 pub enum EstadoTela {
     Login(TelaLogin),
     Dashboard(TelaDashboard),
     Admin(TelaAdmin),
-    Tecnico(TelaTecnico),
-    Financeiro(TelaFinanceiro),
-    Vendedor(TelaVendedor),
-    Gerente(TelaGerente),
-    Atendente(TelaAtendente),
+    Tecnico(TelaTecnico), // NOVO: Adiciona o estado para a tela técnica
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -37,12 +24,36 @@ pub enum Tema {
     Claro,
 }
 
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
+pub enum TelaAtiva {
+    Dashboard,
+    Admin,
+    Tecnico,
+    Financeiro,
+    Comercial,
+    Gerencia,
+}
+
 pub struct AplicativoPrincipal {
     estado_tela: EstadoTela,
     envio_db: Sender<(String, String)>,
     recebimento_db: Receiver<Result<PapelUsuario, ErroAplicacao>>,
     tema_atual: Tema,
     papel_usuario_logado: Option<PapelUsuario>,
+    sidebar_aberto: bool,
+    tela_ativa: TelaAtiva,
+}
+
+fn definir_estilo_azul(ctx: &egui::Context, tema: Tema) {
+    let mut visuals = if tema == Tema::Escuro {
+        egui::Visuals::dark()
+    } else {
+        egui::Visuals::light()
+    };
+    let azul_destaque = egui::Color32::from_rgb(0, 120, 215);
+    visuals.widgets.active.bg_fill = azul_destaque;
+    visuals.selection.bg_fill = azul_destaque;
+    ctx.set_visuals(visuals);
 }
 
 impl AplicativoPrincipal {
@@ -56,161 +67,146 @@ impl AplicativoPrincipal {
             recebimento_db,
             tema_atual: Tema::Escuro,
             papel_usuario_logado: None,
-        }
-    }
-
-    fn voltar_para_dashboard(&mut self) {
-        if let Some(papel) = self.papel_usuario_logado {
-            self.estado_tela = TelaDashboard::new(papel).into();
-        } else {
-            // Se não há usuário logado, volta para a tela de login.
-            self.estado_tela = TelaLogin::new(self.envio_db.clone()).into();
+            sidebar_aberto: true,
+            tela_ativa: TelaAtiva::Dashboard,
         }
     }
 }
 
 impl eframe::App for AplicativoPrincipal {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        match self.tema_atual {
-            Tema::Escuro => ctx.set_visuals(egui::Visuals::dark()),
-            Tema::Claro => ctx.set_visuals(egui::Visuals::light()),
-        };
+    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        definir_estilo_azul(ctx, self.tema_atual);
 
-        let mut acao_global = AcaoGlobal::Nenhuma;
-
-        if !matches!(&self.estado_tela, EstadoTela::Login(_)) {
-            egui::TopBottomPanel::top("barra_superior_principal").show(ctx, |ui| {
-                ui.horizontal_centered(|ui| {
-                    if !matches!(&self.estado_tela, EstadoTela::Dashboard(_)) {
-                        if ui.button("⬅ Menu Principal").clicked() {
-                            self.voltar_para_dashboard();
-                        }
-                    }
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("Deslogar").clicked() {
-                            acao_global = AcaoGlobal::Deslogar;
-                        }
-                        if ui
-                            .button(if self.tema_atual == Tema::Escuro {
-                                "☀️"
-                            } else {
-                                "🌙"
-                            })
-                            .clicked()
-                        {
-                            self.tema_atual = if self.tema_atual == Tema::Escuro {
-                                Tema::Claro
-                            } else {
-                                Tema::Escuro
-                            };
-                        }
-                    });
-                });
-            }); // CORRIGIDO: A API `egui::menu::bar` foi descontinuada. A lógica foi movida para um `ui.horizontal_centered` que tem efeito similar.
-        }
-
-        let mut proximo_estado = None;
-        match &mut self.estado_tela {
-            EstadoTela::Login(tela) => {
-                tela.update(ctx, _frame, &self.recebimento_db);
+        if self.papel_usuario_logado.is_some() {
+            self.mostrar_ui_principal(ctx, frame);
+        } else {
+            if let EstadoTela::Login(tela) = &mut self.estado_tela {
+                tela.update(ctx, frame, &self.recebimento_db);
                 if let Some(Ok(papel)) = tela.obter_resultado_login() {
                     self.papel_usuario_logado = Some(papel);
-                    proximo_estado = Some(TelaDashboard::new(papel).into());
-
+                    self.estado_tela = TelaDashboard::new(papel).into();
+                    self.tela_ativa = TelaAtiva::Dashboard;
                     ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([1024.0, 768.0].into()));
+                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([1280.0, 720.0].into()));
                     ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
-                        [800.0, 600.0].into(),
+                        [1024.0, 600.0].into(),
                     ));
                 }
             }
-            EstadoTela::Dashboard(tela) => match tela.update(ctx, _frame) {
-                AcaoDashboard::NavegarPara(alvo) => match alvo {
-                    AlvoNavegacao::Admin => proximo_estado = Some(TelaAdmin::new().into()),
-                    AlvoNavegacao::Tecnico => proximo_estado = Some(TelaTecnico::new().into()),
-                    AlvoNavegacao::Financeiro => {
-                        proximo_estado = Some(TelaFinanceiro::new().into())
+        }
+    }
+}
+
+impl AplicativoPrincipal {
+    fn mostrar_ui_principal(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        egui::TopBottomPanel::top("barra_superior").show(ctx, |ui| {
+            egui::menu::bar(ui, |ui| {
+                if ui.button("☰").clicked() {
+                    self.sidebar_aberto = !self.sidebar_aberto;
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("Deslogar 📴").clicked() {
+                        self.deslogar(ctx);
                     }
-                    AlvoNavegacao::Vendedor => proximo_estado = Some(TelaVendedor::new().into()),
-                    AlvoNavegacao::Gerente => proximo_estado = Some(TelaGerente::new().into()),
-                    AlvoNavegacao::Atendente => proximo_estado = Some(TelaAtendente::new().into()),
-                },
-                AcaoDashboard::Nenhuma => {}
-            },
-            EstadoTela::Admin(tela) => match tela.update(ctx, _frame) {
-                AcaoAdmin::Voltar => self.voltar_para_dashboard(),
-                // CORRIGIDO: O braço `Deslogar` foi removido pois não existe mais no enum AcaoAdmin
-                AcaoAdmin::Nenhuma => {}
-            },
+                    if ui
+                        .button(if self.tema_atual == Tema::Escuro {
+                            "☀️"
+                        } else {
+                            "🌙"
+                        })
+                        .clicked()
+                    {
+                        self.tema_atual = if self.tema_atual == Tema::Escuro {
+                            Tema::Claro
+                        } else {
+                            Tema::Escuro
+                        };
+                    }
+                });
+            });
+        });
+
+        let papel = self
+            .papel_usuario_logado
+            .expect("Usuário deveria estar logado");
+        if let Some(acao) = sidebar::mostrar(ctx, papel, self.sidebar_aberto) {
+            let AcaoSidebar::NavegarPara(nova_tela) = acao;
+            let tela_ativa = match nova_tela {
+                painel_principal::AlvoNavegacao::Admin => TelaAtiva::Admin,
+                painel_principal::AlvoNavegacao::Tecnico => TelaAtiva::Tecnico,
+                painel_principal::AlvoNavegacao::Financeiro => TelaAtiva::Financeiro,
+                painel_principal::AlvoNavegacao::Comercial => TelaAtiva::Comercial,
+                painel_principal::AlvoNavegacao::Gerencia => TelaAtiva::Gerencia,
+            };
+            self.navegar_para(tela_ativa);
+        }
+
+        egui::CentralPanel::default().show(ctx, |ui| match &mut self.estado_tela {
+            EstadoTela::Dashboard(tela) => {
+                if let painel_principal::AcaoDashboard::NavegarPara(alvo) = tela.update(ctx, frame)
+                {
+                    let tela_ativa = match alvo {
+                        painel_principal::AlvoNavegacao::Admin => TelaAtiva::Admin,
+                        painel_principal::AlvoNavegacao::Tecnico => TelaAtiva::Tecnico,
+                        painel_principal::AlvoNavegacao::Financeiro => TelaAtiva::Financeiro,
+                        painel_principal::AlvoNavegacao::Comercial => TelaAtiva::Comercial,
+                        painel_principal::AlvoNavegacao::Gerencia => TelaAtiva::Gerencia,
+                    };
+                    self.navegar_para(tela_ativa);
+                }
+            }
+            EstadoTela::Admin(tela) => {
+                if let crate::telas::painel_adm::AcaoAdmin::Voltar = tela.update(ctx, frame) {
+                    self.navegar_para(TelaAtiva::Dashboard);
+                }
+            }
             EstadoTela::Tecnico(tela) => {
-                let _ = tela.update(ctx, _frame);
+                if let crate::telas::painel_tecnico::AcaoTecnico::Voltar = tela.update(ctx, frame) {
+                    self.navegar_para(TelaAtiva::Dashboard);
+                }
             }
-            EstadoTela::Financeiro(tela) => {
-                let _ = tela.update(ctx, _frame);
-            }
-            EstadoTela::Vendedor(tela) => {
-                let _ = tela.update(ctx, _frame);
-            }
-            EstadoTela::Gerente(tela) => {
-                let _ = tela.update(ctx, _frame);
-            }
-            EstadoTela::Atendente(tela) => {
-                let _ = tela.update(ctx, _frame);
-            }
-        }
+            _ => {}
+        });
+    }
 
-        if let Some(novo_estado) = proximo_estado {
-            self.estado_tela = novo_estado;
-        }
+    fn navegar_para(&mut self, tela: TelaAtiva) {
+        let papel = self.papel_usuario_logado.unwrap();
+        self.tela_ativa = tela;
+        self.estado_tela = match tela {
+            TelaAtiva::Dashboard => TelaDashboard::new(papel).into(),
+            TelaAtiva::Admin => TelaAdmin::new().into(),
+            TelaAtiva::Tecnico => TelaTecnico::new().into(),
+            _ => TelaDashboard::new(papel).into(),
+        };
+    }
 
-        if acao_global == AcaoGlobal::Deslogar {
-            self.estado_tela = TelaLogin::new(self.envio_db.clone()).into();
-            self.papel_usuario_logado = None;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
-            ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize([0.0, 0.0].into()));
-            ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([624.0, 468.0].into()));
-        }
+    fn deslogar(&mut self, ctx: &egui::Context) {
+        self.papel_usuario_logado = None;
+        self.estado_tela = TelaLogin::new(self.envio_db.clone()).into();
+        ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
+        ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize([0.0, 0.0].into()));
+        ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([400.0, 600.0].into()));
     }
 }
 
 // Conversões `From`
 impl From<TelaLogin> for EstadoTela {
-    fn from(tela: TelaLogin) -> Self {
-        Self::Login(tela)
+    fn from(t: TelaLogin) -> Self {
+        Self::Login(t)
     }
 }
 impl From<TelaDashboard> for EstadoTela {
-    fn from(tela: TelaDashboard) -> Self {
-        Self::Dashboard(tela)
+    fn from(t: TelaDashboard) -> Self {
+        Self::Dashboard(t)
     }
 }
 impl From<TelaAdmin> for EstadoTela {
-    fn from(tela: TelaAdmin) -> Self {
-        Self::Admin(tela)
+    fn from(t: TelaAdmin) -> Self {
+        Self::Admin(t)
     }
 }
 impl From<TelaTecnico> for EstadoTela {
-    fn from(tela: TelaTecnico) -> Self {
-        Self::Tecnico(tela)
+    fn from(t: TelaTecnico) -> Self {
+        Self::Tecnico(t)
     }
-}
-impl From<TelaFinanceiro> for EstadoTela {
-    fn from(tela: TelaFinanceiro) -> Self {
-        Self::Financeiro(tela)
-    }
-}
-impl From<TelaVendedor> for EstadoTela {
-    fn from(tela: TelaVendedor) -> Self {
-        Self::Vendedor(tela)
-    }
-}
-impl From<TelaGerente> for EstadoTela {
-    fn from(tela: TelaGerente) -> Self {
-        Self::Gerente(tela)
-    }
-}
-impl From<TelaAtendente> for EstadoTela {
-    fn from(tela: TelaAtendente) -> Self {
-        Self::Atendente(tela)
-    }
-}
+} // NOVO
