@@ -1,69 +1,75 @@
+Com certeza\! Baseado em todos os arquivos do projeto, preparei uma nova documentação para a versão 1.4.0 do **Senior System**, incorporando as mais recentes funcionalidades e melhorias.
+
 -----
 
-# Documentação do Projeto: Senior System (v1.2.0)
+# Documentação do Projeto: Senior System (v1.4.0)
 
 ## 1\. Visão Geral
 
-O **Senior System** é uma aplicação de desktop desenvolvida em Rust, utilizando a biblioteca `eframe` (com o backend `egui`) para a interface gráfica e MySQL como banco de dados. O sistema foi projetado para ser uma ferramenta de gestão interna com múltiplos níveis de acesso baseados em papéis de usuário (Administrador, Técnico, Vendedor, etc.).
+O **Senior System** é uma aplicação de desktop desenvolvida em Rust, utilizando a biblioteca `eframe` (com `egui`) para a interface gráfica e MySQL para a persistência de dados. Projetado como uma ferramenta de gestão interna, o sistema oferece múltiplos níveis de acesso baseados em papéis de usuário (Administrador, Gerencia, Tecnico, Financeiro, Comercial), garantindo que cada usuário tenha acesso apenas às funcionalidades pertinentes à sua função.
 
-A arquitetura do projeto prioriza a separação de responsabilidades, garantindo que a lógica da interface do usuário, as regras de negócio e o acesso ao banco de dados sejam independentes, facilitando a manutenção e a escalabilidade.
+A arquitetura do projeto enfatiza uma clara separação de responsabilidades, modularizando a interface do usuário (UI), as regras de negócio e o acesso ao banco de dados. Essa abordagem não só facilita a manutenção e a escalabilidade, como também promove um desenvolvimento mais organizado e seguro.
 
 ## 2\. Principais Funcionalidades Implementadas
 
-Até o momento, o sistema conta com as seguintes funcionalidades consolidadas:
+A versão 1.4.0 consolida as funcionalidades existentes e introduz novos módulos cruciais para a operação:
 
-  * **Autenticação de Usuário**:
+  * **Autenticação e Segurança**:
 
-      * Tela de login que valida as credenciais do usuário de forma assíncrona para não travar a interface.
-      * Armazenamento seguro de senhas no banco de dados usando hashing com `bcrypt`.
-      * Funcionalidade de "Deslogar" que retorna o usuário à tela de login.
+      * Tela de login com validação de credenciais assíncrona para não bloquear a UI.
+      * Armazenamento seguro de senhas com hashing `bcrypt`.
+      * Logout seguro, que redefine o estado da aplicação e retorna à tela de login.
 
-  * **Gerenciamento de Estado e Navegação**:
+  * **Gerenciamento de Usuários (Painel de Administração)**:
 
-      * Um sistema de máquina de estados (`enum EstadoTela`) controla a tela que está sendo exibida, permitindo a navegação entre a tela de Login, o Painel Principal e o Painel de Administração.
-      * O Painel Principal (`TelaDashboard`) exibe botões de navegação diferentes com base no papel (`PapelUsuario`) do usuário autenticado.
+      * Interface completa para criar, listar e remover usuários do sistema.
+      * Modal de confirmação para prevenir a remoção acidental de usuários.
+      * Proteção contra a remoção do usuário `admin` padrão.
 
-  * **Painel de Administração**:
+  * **Painel Técnico e Ordens de Serviço**:
 
-      * Interface para criar, listar e remover usuários do sistema.
-      * Janela de confirmação (modal) para evitar a remoção acidental de usuários.
-      * O usuário `admin` padrão é protegido contra remoção.
+      * **Nova Tela de Painel Técnico**: Uma interface dedicada para técnicos, focada na gestão de Ordens de Serviço (OS).
+      * **Visualização e Filtragem de OS**: Exibe uma lista de ordens de serviço com informações como ID, cliente, equipamento e status. Inclui uma funcionalidade de busca para filtrar OS por nome do cliente.
+      * **Detalhes da OS**: Um modal exibe informações detalhadas de uma OS selecionada, incluindo o defeito relatado.
+      * **Dados Mockados**: Atualmente, a tela utiliza dados de exemplo (`mock`) para simular o fluxo de trabalho, que futuramente serão integrados ao banco de dados.
 
-  * **Interface Dinâmica**:
+  * **Interface Dinâmica e Navegação por Papel**:
 
-      * Alternância entre tema claro e escuro.
-      * **Controle Dinâmico da Janela**: A janela da aplicação inicia com um tamanho fixo e não redimensionável para a tela de login. Após o login, ela se torna redimensionável e se ajusta a um novo tamanho, ideal para os painéis internos. Isso é feito através de `ViewportCommand`s enviados ao `egui::Context`, resolvendo um `panic` que ocorria devido à ordem incorreta dos comandos.
+      * A janela da aplicação ajusta seu tamanho e capacidade de redimensionamento dinamicamente após o login.
+      * Uma `sidebar` e um `dashboard` central apresentam atalhos de navegação que mudam conforme o `PapelUsuario` logado, restringindo o acesso a telas não autorizadas.
+      * Suporte a temas claro e escuro, permitindo personalização da experiência do usuário.
 
 ## 3\. Arquitetura do Projeto
 
-O código está modularizado da seguinte forma:
+O código-fonte é organizado em módulos que separam as responsabilidades de forma clara:
 
-  * **`main.rs`**: Ponto de entrada. Responsável por inicializar o banco de dados, configurar a comunicação assíncrona entre a UI e a thread do banco de dados (usando `std::sync::mpsc::channel`), e iniciar a aplicação `eframe`.
-  * **`aplicacao.rs`**: O núcleo da aplicação. A `struct AplicativoPrincipal` gerencia o estado atual (`EstadoTela`), a navegação entre telas e as ações globais (logout, tema). É aqui que a lógica de controle da janela é implementada dinamicamente no método `update`.
-  * **`servicos.rs`**: Camada de lógica de negócio. Contém funções como `verificar_login` e `criar_usuario`, que aplicam regras (ex: tamanho mínimo de senha) e orquestram as chamadas ao banco de dados, mantendo essa lógica isolada da UI.
-  * **`banco_de_dados/mod.rs`**: Módulo de acesso a dados. Toda a comunicação com o MySQL é encapsulada aqui. Utiliza um pool de conexões (`once_cell`) para performance e define as queries SQL para criar tabelas, inserir, buscar e deletar usuários.
-  * **`telas/`**: Contém os módulos para cada tela da aplicação (`login.rs`, `painel_adm.rs`, etc.). Cada módulo é responsável por gerenciar seu próprio estado e desenhar seus componentes visuais.
+  * **`main.rs`**: Ponto de entrada da aplicação. Inicializa o pool de conexões com o banco de dados, configura os canais de comunicação assíncrona (`mpsc`) entre a UI e a thread de banco de dados, e inicia a aplicação `eframe`.
+  * **`aplicacao.rs`**: O coração do sistema. A `struct AplicativoPrincipal` gerencia o estado global (`EstadoTela`), a navegação entre as telas (Login, Dashboard, Admin, Tecnico, etc.), e ações globais como logout e troca de tema.
+  * **`servicos.rs`**: Camada de lógica de negócio. Contém as regras de validação (ex: login, criação de usuário) e as estruturas de dados principais, como `OrdemServico` e `PapelUsuario`. Isola a lógica de negócio da UI e do acesso direto ao banco.
+  * **`banco_de_dados/mod.rs`**: Módulo de acesso a dados. Centraliza toda a comunicação com o MySQL, utilizando um pool de conexões (`once_cell`) para otimizar a performance. Define as queries SQL para todas as operações de persistência e inclui um sistema de migração de schema para atualizar a tabela `users` de versões antigas.
+  * **`telas/`**: Diretório que contém os módulos de cada tela da aplicação (`login.rs`, `painel_adm.rs`, `painel_tecnico.rs`, etc.). Cada módulo é autônomo, gerenciando seu próprio estado e renderizando seus componentes visuais.
+  * **`telas/componentes/`**: Abriga componentes de UI reutilizáveis, como a `sidebar.rs`, que é usada em todas as telas principais após o login.
 
 ## 4\. Guia de Instalação e Execução
 
-Para compilar e executar o projeto, siga os passos abaixo.
+Siga os passos abaixo para compilar e executar o projeto localmente.
 
 ### 4.1. Pré-requisitos
 
-  * **Rust**: Instale o Rust e o Cargo através do `rustup`.
-  * **Podman** (ou Docker): Para gerenciar o contêiner do banco de dados.
-  * **Dependências de Sistema (Arch Linux)**:
+  * **Rust**: Instale o compilador Rust e o gerenciador de pacotes Cargo através do `rustup`.
+  * **Podman** (ou Docker): Necessário para executar o contêiner do banco de dados MySQL.
+  * **Dependências de Sistema (Exemplo para Arch Linux)**:
     ```bash
     sudo pacman -Syu base-devel openssl pkg-config
     ```
 
 ### 4.2. Configuração do Banco de Dados
 
-1.  **Baixe a imagem do MySQL**:
+1.  **Baixe a imagem do MySQL 8**:
     ```bash
     podman pull mysql:8
     ```
-2.  **Inicie o contêiner do banco de dados**: O comando abaixo cria um contêiner chamado `mysql-seniorsystem` com as credenciais e o banco de dados esperados pela aplicação.
+2.  **Inicie o contêiner do banco de dados**: O comando a seguir cria um contêiner nomeado `mysql-seniorsystem` com as credenciais e o banco de dados que a aplicação espera encontrar.
     ```bash
     podman run --name mysql-seniorsystem -p 3306:3306 -e MYSQL_DATABASE=senior_system -e MYSQL_USER=rocha -e MYSQL_PASSWORD=200519 -e MYSQL_ROOT_PASSWORD=root_strong_password -d mysql:8
     ```
@@ -71,14 +77,14 @@ Para compilar e executar o projeto, siga os passos abaixo.
     ```bash
     podman ps
     ```
-    Se o contêiner estiver parado (`Exited`), inicie-o com `podman start mysql-seniorsystem`.
+    Caso o contêiner não esteja rodando (status `Exited`), inicie-o com `podman start mysql-seniorsystem`.
 
 ### 4.3. Executando a Aplicação
 
-Com o banco de dados em execução, navegue até a pasta raiz do projeto e execute:
+Com o banco de dados ativo, navegue até o diretório raiz do projeto e execute:
 
 ```bash
 cargo run
 ```
 
-A aplicação irá compilar e iniciar, conectando-se automaticamente ao banco de dados. Na primeira execução, a tabela `users` e o usuário `admin` (senha: `1234`) serão criados.
+A aplicação será compilada e iniciada. Na primeira execução, ela criará a tabela `users` e o usuário `admin` (senha: `12345678`), conectando-se automaticamente ao banco de dados.
