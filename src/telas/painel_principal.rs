@@ -1,12 +1,12 @@
 // src/telas/painel_principal.rs
 
-use crate::aplicacao::{AppEvent, TelaAtiva}; // IMPORTA O NOVO ENUM
+use crate::aplicacao::{AppEvent, TelaAtiva};
 use crate::servicos::PapelUsuario;
 use eframe::egui;
 
-// O enum `AcaoDashboard` pode ser removido.
+// O enum `AcaoDashboard` foi removido, pois agora usamos AppEvent.
 
-// ... (enum AlvoNavegacao e struct TelaDashboard permanecem iguais) ...
+// Este enum ainda é útil para a sidebar e para a própria tela.
 #[derive(Eq, PartialEq, Hash, Clone, Copy, Debug)]
 pub enum AlvoNavegacao {
     Admin,
@@ -15,6 +15,7 @@ pub enum AlvoNavegacao {
     Comercial,
     Gerencia,
 }
+
 pub struct TelaDashboard {
     papel_usuario: PapelUsuario,
 }
@@ -24,7 +25,7 @@ impl TelaDashboard {
         Self { papel_usuario }
     }
 
-    // ATUALIZADO: A assinatura da função agora retorna Option<AppEvent>
+    // [CORREÇÃO] A função `update` agora retorna `Option<AppEvent>`.
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         let mut evento_emitido = None;
 
@@ -40,7 +41,7 @@ impl TelaDashboard {
                 .show(ui, |ui| {
                     if self.papel_usuario == PapelUsuario::Administrador {
                         if botao_menu(ui, "👤", "Gerenciar Usuários").clicked() {
-                            // ATUALIZADO: Emite um evento de navegação
+                            // [CORREÇÃO] Emite um evento de navegação.
                             evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
                         }
                     }

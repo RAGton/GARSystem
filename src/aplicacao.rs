@@ -1,19 +1,16 @@
 // src/aplicacao.rs
 
-use crate::servicos::{ErroAplicacao, PapelUsuario};
+use crate::servicos::PapelUsuario;
 use crate::telas::{
     componentes::sidebar::{self, AcaoSidebar},
     login::TelaLogin,
     painel_adm::TelaAdmin,
-    painel_os_edicao::TelaOsEdicao, // IMPORTA A NOVA TELA
+    painel_os_edicao::TelaOsEdicao,
     painel_principal::{self, TelaDashboard},
     painel_tecnico::TelaTecnico,
 };
 use eframe::egui;
-use std::sync::mpsc::{Receiver, Sender};
 
-// NOVO: Enum de eventos centralizado para toda a aplicação.
-// Este enum substitui todas as `Acao...` individuais de cada tela.
 #[derive(Debug)]
 pub enum AppEvent {
     NavegarPara(TelaAtiva),
@@ -21,13 +18,12 @@ pub enum AppEvent {
     VoltarParaDashboard,
 }
 
-// ATUALIZADO: Adiciona o novo estado para a tela de edição.
 pub enum EstadoTela {
     Login(TelaLogin),
     Dashboard(TelaDashboard),
     Admin(TelaAdmin),
     Tecnico(TelaTecnico),
-    OsEdicao(TelaOsEdicao), // NOVO ESTADO
+    OsEdicao(TelaOsEdicao),
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -48,8 +44,6 @@ pub enum TelaAtiva {
 
 pub struct AplicativoPrincipal {
     estado_tela: EstadoTela,
-    envio_db: Sender<(String, String)>,
-    recebimento_db: Receiver<Result<PapelUsuario, ErroAplicacao>>,
     tema_atual: Tema,
     papel_usuario_logado: Option<PapelUsuario>,
     sidebar_aberto: bool,
@@ -69,14 +63,9 @@ fn definir_estilo_azul(ctx: &egui::Context, tema: Tema) {
 }
 
 impl AplicativoPrincipal {
-    pub fn new(
-        envio_db: Sender<(String, String)>,
-        recebimento_db: Receiver<Result<PapelUsuario, ErroAplicacao>>,
-    ) -> Self {
+    pub fn new() -> Self {
         Self {
-            estado_tela: TelaLogin::new(envio_db.clone()).into(),
-            envio_db,
-            recebimento_db,
+            estado_tela: TelaLogin::new().into(),
             tema_atual: Tema::Escuro,
             papel_usuario_logado: None,
             sidebar_aberto: true,
@@ -88,22 +77,16 @@ impl AplicativoPrincipal {
 impl eframe::App for AplicativoPrincipal {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         definir_estilo_azul(ctx, self.tema_atual);
-
         if self.papel_usuario_logado.is_some() {
             self.mostrar_ui_principal(ctx, frame);
-        } else {
-            if let EstadoTela::Login(tela) = &mut self.estado_tela {
-                tela.update(ctx, frame, &self.recebimento_db);
-                if let Some(Ok(papel)) = tela.obter_resultado_login() {
-                    self.papel_usuario_logado = Some(papel);
-                    // Navega para o Dashboard ao logar
-                    self.processar_evento(AppEvent::NavegarPara(TelaAtiva::Dashboard));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([1280.0, 720.0].into()));
-                    ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
-                        [1024.0, 600.0].into(),
-                    ));
-                }
+        } else if let EstadoTela::Login(tela) = &mut self.estado_tela {
+            tela.update(ctx, frame);
+            if let Some(Ok(papel)) = tela.obter_resultado_login() {
+                self.papel_usuario_logado = Some(papel);
+                self.processar_evento(AppEvent::NavegarPara(TelaAtiva::Dashboard));
+                ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
+                ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([1280.0, 720.0].into()));
+                ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize([1024.0, 600.0].into()));
             }
         }
     }
@@ -141,41 +124,28 @@ impl AplicativoPrincipal {
         let papel = self
             .papel_usuario_logado
             .expect("Usuário deveria estar logado");
-
-        // Sidebar agora também emite AppEvent
-        if let Some(acao) = sidebar::mostrar(ctx, papel, self.sidebar_aberto) {
-            let AcaoSidebar::NavegarPara(nova_tela) = acao;
-            let tela_ativa = match nova_tela {
-                painel_principal::AlvoNavegacao::Admin => TelaAtiva::Admin,
-                painel_principal::AlvoNavegacao::Tecnico => TelaAtiva::Tecnico,
-                painel_principal::AlvoNavegacao::Financeiro => TelaAtiva::Financeiro,
-                painel_principal::AlvoNavegacao::Comercial => TelaAtiva::Comercial,
-                painel_principal::AlvoNavegacao::Gerencia => TelaAtiva::Gerencia,
-            };
+        if let Some(AppEvent::NavegarPara(tela_ativa)) =
+            sidebar::mostrar(ctx, papel, self.sidebar_aberto)
+        {
             self.processar_evento(AppEvent::NavegarPara(tela_ativa));
         }
 
         let mut evento_emitido: Option<AppEvent> = None;
-        egui::CentralPanel::default().show(ctx, |ui| {
-            // As telas agora retornam `Option<AppEvent>`
-            let evento_da_tela = match &mut self.estado_tela {
+        egui::CentralPanel::default().show(ctx, |_| {
+            evento_emitido = match &mut self.estado_tela {
                 EstadoTela::Dashboard(tela) => tela.update(ctx, frame),
                 EstadoTela::Admin(tela) => tela.update(ctx, frame),
                 EstadoTela::Tecnico(tela) => tela.update(ctx, frame),
                 EstadoTela::OsEdicao(tela) => tela.update(ctx, frame),
-                // O login não é chamado aqui, então não precisa retornar evento
-                EstadoTela::Login(_) => None,
+                _ => None,
             };
-            evento_emitido = evento_da_tela;
         });
 
-        // Se a tela ativa emitiu um evento, processe-o.
         if let Some(evento) = evento_emitido {
             self.processar_evento(evento);
         }
     }
 
-    // NOVA FUNÇÃO CENTRAL: O roteador de eventos.
     fn processar_evento(&mut self, evento: AppEvent) {
         match evento {
             AppEvent::NavegarPara(tela) => {
@@ -185,12 +155,10 @@ impl AplicativoPrincipal {
                     TelaAtiva::Dashboard => TelaDashboard::new(papel).into(),
                     TelaAtiva::Admin => TelaAdmin::new().into(),
                     TelaAtiva::Tecnico => TelaTecnico::new().into(),
-                    // Adicione aqui as outras telas quando forem criadas
-                    _ => TelaDashboard::new(papel).into(),
+                    _ => TelaDashboard::new(papel).into(), // Fallback
                 };
             }
             AppEvent::AbrirEditorOS(os_id) => {
-                // Muda o estado para a nova tela de edição, passando o ID.
                 self.estado_tela = TelaOsEdicao::new(os_id).into();
             }
             AppEvent::VoltarParaDashboard => {
@@ -203,12 +171,12 @@ impl AplicativoPrincipal {
 
     fn deslogar(&mut self, ctx: &egui::Context) {
         self.papel_usuario_logado = None;
-        self.estado_tela = TelaLogin::new(self.envio_db.clone()).into();
+        self.estado_tela = TelaLogin::new().into();
         ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize([0.0, 0.0].into()));
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([400.0, 600.0].into()));
     }
-}
+} // <--- [CORREÇÃO] ESTA CHAVE ESTAVA FALTANDO
 
 // Conversões `From`
 impl From<TelaLogin> for EstadoTela {
@@ -231,7 +199,6 @@ impl From<TelaTecnico> for EstadoTela {
         Self::Tecnico(t)
     }
 }
-// ADICIONE A CONVERSÃO PARA A NOVA TELA
 impl From<TelaOsEdicao> for EstadoTela {
     fn from(t: TelaOsEdicao) -> Self {
         Self::OsEdicao(t)

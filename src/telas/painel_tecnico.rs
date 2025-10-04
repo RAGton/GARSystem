@@ -1,10 +1,10 @@
 // src/telas/painel_tecnico.rs
 
-use crate::aplicacao::AppEvent; // IMPORTA O NOVO ENUM
+use crate::aplicacao::AppEvent;
 use crate::servicos::{OrdemServico, StatusOS};
 use eframe::egui;
 
-// O enum `AcaoTecnico` não é mais necessário e pode ser removido.
+// O enum `AcaoTecnico` foi removido.
 
 pub struct TelaTecnico {
     ordens: Vec<OrdemServico>,
@@ -14,7 +14,7 @@ pub struct TelaTecnico {
 
 impl TelaTecnico {
     pub fn new() -> Self {
-        // ... (código do new() permanece igual) ...
+        // Dados de exemplo para popular a tela.
         let ordens_mock = vec![
             OrdemServico {
                 id: 101,
@@ -52,6 +52,7 @@ impl TelaTecnico {
                 status: StatusOS::Cancelada,
             },
         ];
+
         Self {
             ordens: ordens_mock,
             ordem_selecionada: None,
@@ -59,14 +60,14 @@ impl TelaTecnico {
         }
     }
 
-    // ATUALIZADO: A assinatura da função agora retorna Option<AppEvent>
+    // [CORREÇÃO] A função `update` agora retorna `Option<AppEvent>`.
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         let mut evento_emitido = None;
 
         egui::TopBottomPanel::top("painel_superior_tecnico").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("⬅ Voltar ao Dashboard").clicked() {
-                    // ATUALIZADO: Emite um evento para voltar
+                    // [CORREÇÃO] Emite o evento para voltar.
                     evento_emitido = Some(AppEvent::VoltarParaDashboard);
                 }
                 ui.separator();
@@ -94,7 +95,7 @@ impl TelaTecnico {
                         ui.label(egui::RichText::new("Cliente").strong());
                         ui.label(egui::RichText::new("Equipamento").strong());
                         ui.label(egui::RichText::new("Status").strong());
-                        ui.label(egui::RichText::new("Ações").strong()); // Nova coluna
+                        ui.label(""); // Coluna para o botão de ação
                         ui.end_row();
 
                         for os in &self.ordens {
@@ -108,10 +109,8 @@ impl TelaTecnico {
                                 ui.label(&os.cliente);
                                 ui.label(&os.equipamento);
                                 ui.label(format!("{:?}", os.status));
-
-                                // ATUALIZADO: Botão para abrir o editor
-                                if ui.button("Atualizar OS ⚙️").clicked() {
-                                    // Emite o evento para abrir o editor para ESTA OS.
+                                // [CORREÇÃO] O botão agora emite o evento para abrir o editor.
+                                if ui.button("Gerenciar OS ⚙️").clicked() {
                                     evento_emitido = Some(AppEvent::AbrirEditorOS(os.id));
                                 }
                                 ui.end_row();
@@ -121,8 +120,8 @@ impl TelaTecnico {
             });
         });
 
-        // O modal de detalhes simples pode ser removido, já que agora temos uma tela de edição.
-        // Mas se quiser mantê-lo, pode continuar aqui.
+        // O modal de detalhes pode ser removido ou mantido, mas a navegação principal
+        // agora é feita através do evento `AbrirEditorOS`.
 
         evento_emitido
     }

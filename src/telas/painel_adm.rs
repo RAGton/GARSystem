@@ -1,19 +1,23 @@
 // src/telas/painel_adm.rs
 
-use crate::aplicacao::AppEvent; // IMPORTA O NOVO ENUM
+use crate::aplicacao::AppEvent;
 use crate::servicos::{self, InfoUsuario, PapelUsuario};
 use eframe::egui;
 
-// O enum `AcaoAdmin` pode ser removido.
+// Este enum não é mais necessário na nova arquitetura de eventos.
+// pub enum AcaoAdmin {
+//     Nenhuma,
+//     Voltar,
+// }
 
-// ... (structs FormularioNovoUsuario e TelaAdmin permanecem iguais) ...
-pub struct FormularioNovoUsuario {
+struct FormularioNovoUsuario {
     nome_usuario: String,
     senha: String,
     papel_selecionado: PapelUsuario,
     mensagem: String,
     e_erro: bool,
 }
+
 impl Default for FormularioNovoUsuario {
     fn default() -> Self {
         Self {
@@ -25,6 +29,8 @@ impl Default for FormularioNovoUsuario {
         }
     }
 }
+
+// [CORREÇÃO] A struct agora é pública (`pub`), tornando-a visível para o `aplicacao.rs`.
 pub struct TelaAdmin {
     usuarios: Vec<InfoUsuario>,
     formulario: FormularioNovoUsuario,
@@ -32,9 +38,10 @@ pub struct TelaAdmin {
     usuario_para_remover: Option<String>,
 }
 
-
 impl TelaAdmin {
     pub fn new() -> Self {
+        // NOTA: Na arquitetura cliente-servidor, esta chamada direta será substituída
+        // por uma requisição HTTP para buscar os usuários quando a tela for aberta.
         Self {
             usuarios: servicos::listar_usuarios(),
             formulario: FormularioNovoUsuario::default(),
@@ -44,17 +51,18 @@ impl TelaAdmin {
     }
 
     fn recarregar_usuarios(&mut self) {
+        // Esta função também será substituída por uma requisição HTTP.
         self.usuarios = servicos::listar_usuarios();
     }
-    
-    // ATUALIZADO: A assinatura da função agora retorna Option<AppEvent>
+
+    // [CORREÇÃO] A função agora retorna `Option<AppEvent>` para se integrar ao sistema de eventos.
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         let mut evento_emitido = None;
 
         egui::TopBottomPanel::top("painel_superior_adm").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("⬅ Voltar ao Dashboard").clicked() {
-                    // ATUALIZADO: Emite um evento para voltar
+                    // Emite o evento para voltar, em vez de retornar um enum local.
                     evento_emitido = Some(AppEvent::VoltarParaDashboard);
                 }
                 ui.separator();
@@ -62,8 +70,8 @@ impl TelaAdmin {
             });
         });
 
-        // ... (resto do código da tela de admin permanece o mesmo) ...
         let modal_aberto = self.mostrar_janela_confirmacao;
+
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_enabled_ui(!modal_aberto, |ui| {
                 ui.group(|ui| {
@@ -81,7 +89,8 @@ impl TelaAdmin {
                     });
                     ui.horizontal(|ui| {
                         ui.label("Papel:  ");
-                        egui::ComboBox::from_id_source("combo_papel")
+                        // [CORREÇÃO] `from_id` trocado pela API correta `from_id_salt`.
+                        egui::ComboBox::from_id_salt("combo_papel")
                             .selected_text(format!("{:?}", self.formulario.papel_selecionado))
                             .show_ui(ui, |ui| {
                                 for papel in PapelUsuario::iter() {
@@ -106,7 +115,9 @@ impl TelaAdmin {
                         ui.label(egui::RichText::new(&self.formulario.mensagem).color(cor));
                     }
                 });
+
                 ui.separator();
+
                 ui.heading("Usuários Existentes");
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let mut usuario_a_remover = None;
@@ -129,6 +140,7 @@ impl TelaAdmin {
                 });
             });
         });
+
         if self.mostrar_janela_confirmacao {
             self.mostrar_modal_confirmacao(ctx);
         }
@@ -136,15 +148,19 @@ impl TelaAdmin {
         evento_emitido
     }
 
+    // NOTA: Esta função precisará ser reescrita para usar `reqwest` e chamar a API do backend.
     fn tentar_criar_usuario(&mut self) {
         if self.formulario.nome_usuario.trim().is_empty() || self.formulario.senha.is_empty() {
             self.formulario.mensagem = "Usuário e senha não podem estar em branco.".to_string();
             self.formulario.e_erro = true;
             return;
         }
+
         let nome_usuario = self.formulario.nome_usuario.clone();
         let senha = self.formulario.senha.clone();
         let papel = self.formulario.papel_selecionado;
+
+        // Lógica temporária. No futuro, isto será uma chamada HTTP.
         match servicos::criar_usuario(&nome_usuario, &senha, papel) {
             Ok(_) => {
                 self.formulario.mensagem =
@@ -174,6 +190,7 @@ impl TelaAdmin {
                     ui.add_space(20.0);
                     ui.horizontal(|ui| {
                         if ui.button("Sim, remover").clicked() {
+                            // NOTA: Esta lógica também será uma chamada HTTP no futuro.
                             match servicos::remover_usuario(&usuario_clone) {
                                 Ok(_) => {
                                     self.formulario.mensagem =

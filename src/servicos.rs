@@ -1,10 +1,11 @@
 // src/servicos.rs
 
+use serde::{Deserialize, Serialize}; // ADICIONE ESTA LINHA
 use thiserror::Error;
 
 // --- ESTRUTURAS DE DADOS ADICIONADAS ---
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)] // Adicionado Serialize/Deserialize
 pub enum StatusOS {
     Aberta,
     EmAndamento,
@@ -14,7 +15,7 @@ pub enum StatusOS {
 }
 
 // Representa uma Ordem de Serviço.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)] // Adicionado Serialize/Deserialize
 pub struct OrdemServico {
     pub id: u32,
     pub cliente: String,
@@ -25,7 +26,8 @@ pub struct OrdemServico {
 
 // --- FIM DAS ESTRUTURAS DE DADOS ADICIONADAS ---
 
-#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
+// [CORREÇÃO] Adicionamos os derives de Serialize e Deserialize
+#[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, Serialize, Deserialize)]
 pub enum PapelUsuario {
     Administrador,
     Gerencia,
@@ -47,6 +49,7 @@ impl PapelUsuario {
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)] // Adicionado Serialize/Deserialize
 pub struct InfoUsuario {
     pub id: i32,
     pub nome_usuario: String,

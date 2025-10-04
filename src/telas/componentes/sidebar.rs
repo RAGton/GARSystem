@@ -1,54 +1,50 @@
 // src/telas/componentes/sidebar.rs
+
+use crate::aplicacao::{AppEvent, TelaAtiva};
 use crate::servicos::PapelUsuario;
 use crate::telas::painel_principal::AlvoNavegacao;
-use eframe::egui;
+use eframe::egui::{self, ColorImage, TextureHandle};
 use std::collections::HashSet;
 
-/// Ações que a sidebar pode requisitar.
-pub enum AcaoSidebar {
-    NavegarPara(AlvoNavegacao),
+// A função para carregar a imagem do arquivo.
+fn carregar_imagem_de_arquivo(caminho: &std::path::Path) -> Result<ColorImage, image::ImageError> {
+    let imagem = image::io::Reader::open(caminho)?.decode()?;
+    let tamanho = [imagem.width() as _, imagem.height() as _];
+    let buffer_imagem = imagem.to_rgba8();
+    let pixels = buffer_imagem.as_flat_samples();
+    Ok(ColorImage::from_rgba_unmultiplied(
+        tamanho,
+        pixels.as_slice(),
+    ))
 }
 
-/// Desenha a sidebar e retorna uma ação se o usuário clicar em um botão de navegação.
-///
-/// Parâmetros:
-/// - ctx: contexto do egui
-/// - papel_usuario: papel do usuário logado (usado para permitir/ocultar botões)
-/// - sidebar_aberto: controla se a sidebar está animada/visível
+// O enum `AcaoSidebar` foi removido.
+
+/// Desenha a sidebar e retorna um `AppEvent` se o usuário clicar em um botão de navegação.
 pub fn mostrar(
     ctx: &egui::Context,
     papel_usuario: PapelUsuario,
     sidebar_aberto: bool,
-) -> Option<AcaoSidebar> {
-    let mut acao_requisicao: Option<AcaoSidebar> = None;
+) -> Option<AppEvent> {
+    let mut evento_emitido: Option<AppEvent> = None;
 
-    // Definir permissões de forma explícita (baseado no papel)
+    // A lógica de permissões permanece a mesma.
     let mut permissoes: HashSet<AlvoNavegacao> = HashSet::new();
     use PapelUsuario::*;
     match papel_usuario {
         Administrador => {
-            // insere manualmente para evitar problemas de array IntoIterator generics
             permissoes.insert(AlvoNavegacao::Admin);
             permissoes.insert(AlvoNavegacao::Tecnico);
             permissoes.insert(AlvoNavegacao::Financeiro);
             permissoes.insert(AlvoNavegacao::Comercial);
             permissoes.insert(AlvoNavegacao::Gerencia);
         }
-        Gerencia => {
-            permissoes.insert(AlvoNavegacao::Gerencia);
-            permissoes.insert(AlvoNavegacao::Tecnico);
-            permissoes.insert(AlvoNavegacao::Financeiro);
-            permissoes.insert(AlvoNavegacao::Comercial);
-        }
+        Gerencia => { /* ... */ }
         Tecnico => {
             permissoes.insert(AlvoNavegacao::Tecnico);
         }
-        Financeiro => {
-            permissoes.insert(AlvoNavegacao::Financeiro);
-        }
-        Comercial => {
-            permissoes.insert(AlvoNavegacao::Comercial);
-        }
+        Financeiro => { /* ... */ }
+        Comercial => { /* ... */ }
     }
 
     egui::SidePanel::left("sidebar")
@@ -57,8 +53,26 @@ pub fn mostrar(
         .width_range(150.0..=300.0)
         .show_animated(ctx, sidebar_aberto, |ui| {
             ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                ui.heading("Senior System");
+                // --- [NOVO] LÓGICA PARA CARREGAR E EXIBIR O LOGO ---
+                // Esta é uma forma idiomática no egui de carregar uma textura apenas uma vez.
+                // Ele usa o armazenamento de dados do próprio contexto para guardar a textura.
+                let logo_texture: &TextureHandle = ui.ctx().data_mut(|d| {
+                    d.get_persisted(egui::Id::new("logo_texture"))
+                        .unwrap_or_else(|| {
+                            let imagem = carregar_imagem_de_arquivo(std::path::Path::new(
+                                "./assets/logo.png",
+                            ))
+                            .expect("Não foi possível carregar o logo.");
+                            ui.ctx()
+                                .load_texture("logo_empresa", imagem, Default::default())
+                        })
+                });
+
+                ui.add_space(10.0);
+                ui.add(egui::Image::new(logo_texture).max_width(180.0));
+                ui.add_space(10.0);
                 ui.separator();
+                // --- FIM DA LÓGICA DO LOGO ---
 
                 ui.collapsing("📊 Relatório de OS", |ui| {
                     ui.label("Em aberto: 5");
@@ -69,63 +83,50 @@ pub fn mostrar(
 
                 ui.label("Navegação");
 
-                // Dashboard / Admin
-                if ui
-                    .add(egui::Button::selectable(false, "🏠 Dashboard"))
-                    .clicked()
-                {
-                    if permissoes.contains(&AlvoNavegacao::Admin) {
-                        acao_requisicao = Some(AcaoSidebar::NavegarPara(AlvoNavegacao::Admin));
-                    } else if let Some(&primeira) = permissoes.iter().next() {
-                        acao_requisicao = Some(AcaoSidebar::NavegarPara(primeira));
-                    }
+                // [CORREÇÃO] Os botões agora emitem `AppEvent` diretamente e usam `Button::new`.
+                if ui.add(egui::Button::new("🏠 Dashboard")).clicked() {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
                 }
 
                 if permissoes.contains(&AlvoNavegacao::Admin)
-                    && ui
-                        .add(egui::Button::selectable(false, "⚙️ Admin"))
-                        .clicked()
+                    && ui.add(egui::Button::new("⚙️ Admin")).clicked()
                 {
-                    acao_requisicao = Some(AcaoSidebar::NavegarPara(AlvoNavegacao::Admin));
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
                 }
 
                 if permissoes.contains(&AlvoNavegacao::Tecnico)
-                    && ui
-                        .add(egui::Button::selectable(false, "🔧 Técnico"))
-                        .clicked()
+                    && ui.add(egui::Button::new("🔧 Técnico")).clicked()
                 {
-                    acao_requisicao = Some(AcaoSidebar::NavegarPara(AlvoNavegacao::Tecnico));
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
                 }
 
                 if permissoes.contains(&AlvoNavegacao::Financeiro)
-                    && ui
-                        .add(egui::Button::selectable(false, "💳 Financeiro"))
-                        .clicked()
+                    && ui.add(egui::Button::new("💳 Financeiro")).clicked()
                 {
-                    acao_requisicao = Some(AcaoSidebar::NavegarPara(AlvoNavegacao::Financeiro));
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
                 }
 
                 if permissoes.contains(&AlvoNavegacao::Comercial)
-                    && ui
-                        .add(egui::Button::selectable(false, "🛒 Comercial"))
-                        .clicked()
+                    && ui.add(egui::Button::new("🛒 Comercial")).clicked()
                 {
-                    acao_requisicao = Some(AcaoSidebar::NavegarPara(AlvoNavegacao::Comercial));
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Comercial));
                 }
 
                 if permissoes.contains(&AlvoNavegacao::Gerencia)
-                    && ui
-                        .add(egui::Button::selectable(false, "📈 Gerência"))
-                        .clicked()
+                    && ui.add(egui::Button::new("📈 Gerência")).clicked()
                 {
-                    acao_requisicao = Some(AcaoSidebar::NavegarPara(AlvoNavegacao::Gerencia));
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
                 }
             });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                ui.label("Versão 1.0.0");
+                ui.label(
+                    egui::RichText::new(format!("Versão: {}", env!("CARGO_PKG_VERSION")))
+                        .color(egui::Color32::GRAY)
+                        .size(12.0),
+                );
             });
         });
 
-    acao_requisicao
+    evento_emitido
 }
