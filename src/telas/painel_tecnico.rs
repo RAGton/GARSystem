@@ -1,12 +1,10 @@
 // src/telas/painel_tecnico.rs
 
+use crate::aplicacao::AppEvent; // IMPORTA O NOVO ENUM
 use crate::servicos::{OrdemServico, StatusOS};
 use eframe::egui;
 
-pub enum AcaoTecnico {
-    Nenhuma,
-    Voltar,
-}
+// O enum `AcaoTecnico` não é mais necessário e pode ser removido.
 
 pub struct TelaTecnico {
     ordens: Vec<OrdemServico>,
@@ -16,8 +14,7 @@ pub struct TelaTecnico {
 
 impl TelaTecnico {
     pub fn new() -> Self {
-        // Dados de exemplo para popular a tela.
-        // No futuro, isso virá do banco de dados.
+        // ... (código do new() permanece igual) ...
         let ordens_mock = vec![
             OrdemServico {
                 id: 101,
@@ -55,7 +52,6 @@ impl TelaTecnico {
                 status: StatusOS::Cancelada,
             },
         ];
-
         Self {
             ordens: ordens_mock,
             ordem_selecionada: None,
@@ -63,13 +59,15 @@ impl TelaTecnico {
         }
     }
 
-    pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> AcaoTecnico {
-        let mut acao = AcaoTecnico::Nenhuma;
+    // ATUALIZADO: A assinatura da função agora retorna Option<AppEvent>
+    pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
+        let mut evento_emitido = None;
 
         egui::TopBottomPanel::top("painel_superior_tecnico").show(ctx, |ui| {
             ui.horizontal(|ui| {
                 if ui.button("⬅ Voltar ao Dashboard").clicked() {
-                    acao = AcaoTecnico::Voltar;
+                    // ATUALIZADO: Emite um evento para voltar
+                    evento_emitido = Some(AppEvent::VoltarParaDashboard);
                 }
                 ui.separator();
                 ui.heading("Painel Técnico - Ordens de Serviço");
@@ -86,24 +84,20 @@ impl TelaTecnico {
             });
             ui.separator();
 
-            // Área de rolagem para a lista de OS
             egui::ScrollArea::vertical().show(ui, |ui| {
                 egui::Grid::new("grid_os")
                     .num_columns(5)
                     .striped(true)
                     .spacing([20.0, 8.0])
                     .show(ui, |ui| {
-                        // Cabeçalho da tabela
                         ui.label(egui::RichText::new("ID").strong());
                         ui.label(egui::RichText::new("Cliente").strong());
                         ui.label(egui::RichText::new("Equipamento").strong());
                         ui.label(egui::RichText::new("Status").strong());
-                        ui.label(""); // Coluna para o botão de ação
+                        ui.label(egui::RichText::new("Ações").strong()); // Nova coluna
                         ui.end_row();
 
-                        // Linhas da tabela
                         for os in &self.ordens {
-                            // Aplica o filtro (case-insensitive)
                             if self.filtro_busca.is_empty()
                                 || os
                                     .cliente
@@ -114,8 +108,11 @@ impl TelaTecnico {
                                 ui.label(&os.cliente);
                                 ui.label(&os.equipamento);
                                 ui.label(format!("{:?}", os.status));
-                                if ui.button("Detalhes").clicked() {
-                                    self.ordem_selecionada = Some(os.id);
+
+                                // ATUALIZADO: Botão para abrir o editor
+                                if ui.button("Atualizar OS ⚙️").clicked() {
+                                    // Emite o evento para abrir o editor para ESTA OS.
+                                    evento_emitido = Some(AppEvent::AbrirEditorOS(os.id));
                                 }
                                 ui.end_row();
                             }
@@ -124,38 +121,9 @@ impl TelaTecnico {
             });
         });
 
-        // Janela modal para mostrar detalhes da OS selecionada
-        if let Some(id_selecionado) = self.ordem_selecionada {
-            let os_selecionada = self
-                .ordens
-                .iter()
-                .find(|os| os.id == id_selecionado)
-                .cloned();
+        // O modal de detalhes simples pode ser removido, já que agora temos uma tela de edição.
+        // Mas se quiser mantê-lo, pode continuar aqui.
 
-            if let Some(os) = os_selecionada {
-                egui::Window::new(format!("Detalhes da OS #{}", os.id))
-                    .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
-                    .resizable(false)
-                    .collapsible(false)
-                    .show(ctx, |ui| {
-                        ui.heading(&os.cliente);
-                        ui.label(format!("Equipamento: {}", os.equipamento));
-                        ui.add_space(10.0);
-                        ui.label("Defeito Relatado:");
-                        ui.group(|ui| {
-                            ui.label(&os.defeito_relatado);
-                        });
-                        ui.add_space(10.0);
-
-                        if ui.button("Fechar").clicked() {
-                            self.ordem_selecionada = None;
-                        }
-                    });
-            } else {
-                self.ordem_selecionada = None; // Fecha o modal se a OS não for encontrada
-            }
-        }
-
-        acao
+        evento_emitido
     }
 }

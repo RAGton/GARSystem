@@ -5,17 +5,29 @@ use crate::telas::{
     componentes::sidebar::{self, AcaoSidebar},
     login::TelaLogin,
     painel_adm::TelaAdmin,
+    painel_os_edicao::TelaOsEdicao, // IMPORTA A NOVA TELA
     painel_principal::{self, TelaDashboard},
-    painel_tecnico::TelaTecnico, // NOVO: Importa a nova tela
+    painel_tecnico::TelaTecnico,
 };
 use eframe::egui;
 use std::sync::mpsc::{Receiver, Sender};
 
+// NOVO: Enum de eventos centralizado para toda a aplicação.
+// Este enum substitui todas as `Acao...` individuais de cada tela.
+#[derive(Debug)]
+pub enum AppEvent {
+    NavegarPara(TelaAtiva),
+    AbrirEditorOS(u32),
+    VoltarParaDashboard,
+}
+
+// ATUALIZADO: Adiciona o novo estado para a tela de edição.
 pub enum EstadoTela {
     Login(TelaLogin),
     Dashboard(TelaDashboard),
     Admin(TelaAdmin),
-    Tecnico(TelaTecnico), // NOVO: Adiciona o estado para a tela técnica
+    Tecnico(TelaTecnico),
+    OsEdicao(TelaOsEdicao), // NOVO ESTADO
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -84,8 +96,8 @@ impl eframe::App for AplicativoPrincipal {
                 tela.update(ctx, frame, &self.recebimento_db);
                 if let Some(Ok(papel)) = tela.obter_resultado_login() {
                     self.papel_usuario_logado = Some(papel);
-                    self.estado_tela = TelaDashboard::new(papel).into();
-                    self.tela_ativa = TelaAtiva::Dashboard;
+                    // Navega para o Dashboard ao logar
+                    self.processar_evento(AppEvent::NavegarPara(TelaAtiva::Dashboard));
                     ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(true));
                     ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([1280.0, 720.0].into()));
                     ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize(
@@ -129,6 +141,8 @@ impl AplicativoPrincipal {
         let papel = self
             .papel_usuario_logado
             .expect("Usuário deveria estar logado");
+
+        // Sidebar agora também emite AppEvent
         if let Some(acao) = sidebar::mostrar(ctx, papel, self.sidebar_aberto) {
             let AcaoSidebar::NavegarPara(nova_tela) = acao;
             let tela_ativa = match nova_tela {
@@ -138,46 +152,53 @@ impl AplicativoPrincipal {
                 painel_principal::AlvoNavegacao::Comercial => TelaAtiva::Comercial,
                 painel_principal::AlvoNavegacao::Gerencia => TelaAtiva::Gerencia,
             };
-            self.navegar_para(tela_ativa);
+            self.processar_evento(AppEvent::NavegarPara(tela_ativa));
         }
 
-        egui::CentralPanel::default().show(ctx, |ui| match &mut self.estado_tela {
-            EstadoTela::Dashboard(tela) => {
-                if let painel_principal::AcaoDashboard::NavegarPara(alvo) = tela.update(ctx, frame)
-                {
-                    let tela_ativa = match alvo {
-                        painel_principal::AlvoNavegacao::Admin => TelaAtiva::Admin,
-                        painel_principal::AlvoNavegacao::Tecnico => TelaAtiva::Tecnico,
-                        painel_principal::AlvoNavegacao::Financeiro => TelaAtiva::Financeiro,
-                        painel_principal::AlvoNavegacao::Comercial => TelaAtiva::Comercial,
-                        painel_principal::AlvoNavegacao::Gerencia => TelaAtiva::Gerencia,
-                    };
-                    self.navegar_para(tela_ativa);
-                }
-            }
-            EstadoTela::Admin(tela) => {
-                if let crate::telas::painel_adm::AcaoAdmin::Voltar = tela.update(ctx, frame) {
-                    self.navegar_para(TelaAtiva::Dashboard);
-                }
-            }
-            EstadoTela::Tecnico(tela) => {
-                if let crate::telas::painel_tecnico::AcaoTecnico::Voltar = tela.update(ctx, frame) {
-                    self.navegar_para(TelaAtiva::Dashboard);
-                }
-            }
-            _ => {}
+        let mut evento_emitido: Option<AppEvent> = None;
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // As telas agora retornam `Option<AppEvent>`
+            let evento_da_tela = match &mut self.estado_tela {
+                EstadoTela::Dashboard(tela) => tela.update(ctx, frame),
+                EstadoTela::Admin(tela) => tela.update(ctx, frame),
+                EstadoTela::Tecnico(tela) => tela.update(ctx, frame),
+                EstadoTela::OsEdicao(tela) => tela.update(ctx, frame),
+                // O login não é chamado aqui, então não precisa retornar evento
+                EstadoTela::Login(_) => None,
+            };
+            evento_emitido = evento_da_tela;
         });
+
+        // Se a tela ativa emitiu um evento, processe-o.
+        if let Some(evento) = evento_emitido {
+            self.processar_evento(evento);
+        }
     }
 
-    fn navegar_para(&mut self, tela: TelaAtiva) {
-        let papel = self.papel_usuario_logado.unwrap();
-        self.tela_ativa = tela;
-        self.estado_tela = match tela {
-            TelaAtiva::Dashboard => TelaDashboard::new(papel).into(),
-            TelaAtiva::Admin => TelaAdmin::new().into(),
-            TelaAtiva::Tecnico => TelaTecnico::new().into(),
-            _ => TelaDashboard::new(papel).into(),
-        };
+    // NOVA FUNÇÃO CENTRAL: O roteador de eventos.
+    fn processar_evento(&mut self, evento: AppEvent) {
+        match evento {
+            AppEvent::NavegarPara(tela) => {
+                let papel = self.papel_usuario_logado.unwrap();
+                self.tela_ativa = tela;
+                self.estado_tela = match tela {
+                    TelaAtiva::Dashboard => TelaDashboard::new(papel).into(),
+                    TelaAtiva::Admin => TelaAdmin::new().into(),
+                    TelaAtiva::Tecnico => TelaTecnico::new().into(),
+                    // Adicione aqui as outras telas quando forem criadas
+                    _ => TelaDashboard::new(papel).into(),
+                };
+            }
+            AppEvent::AbrirEditorOS(os_id) => {
+                // Muda o estado para a nova tela de edição, passando o ID.
+                self.estado_tela = TelaOsEdicao::new(os_id).into();
+            }
+            AppEvent::VoltarParaDashboard => {
+                let papel = self.papel_usuario_logado.unwrap();
+                self.tela_ativa = TelaAtiva::Dashboard;
+                self.estado_tela = TelaDashboard::new(papel).into();
+            }
+        }
     }
 
     fn deslogar(&mut self, ctx: &egui::Context) {
@@ -209,4 +230,10 @@ impl From<TelaTecnico> for EstadoTela {
     fn from(t: TelaTecnico) -> Self {
         Self::Tecnico(t)
     }
-} // NOVO
+}
+// ADICIONE A CONVERSÃO PARA A NOVA TELA
+impl From<TelaOsEdicao> for EstadoTela {
+    fn from(t: TelaOsEdicao) -> Self {
+        Self::OsEdicao(t)
+    }
+}

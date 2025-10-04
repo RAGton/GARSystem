@@ -1,14 +1,12 @@
 // src/telas/painel_principal.rs
 
+use crate::aplicacao::{AppEvent, TelaAtiva}; // IMPORTA O NOVO ENUM
 use crate::servicos::PapelUsuario;
 use eframe::egui;
 
-pub enum AcaoDashboard {
-    Nenhuma,
-    NavegarPara(AlvoNavegacao),
-}
+// O enum `AcaoDashboard` pode ser removido.
 
-// Variantes de navegação finais: Admin, Tecnico, Financeiro, Comercial, Gerencia
+// ... (enum AlvoNavegacao e struct TelaDashboard permanecem iguais) ...
 #[derive(Eq, PartialEq, Hash, Clone, Copy, Debug)]
 pub enum AlvoNavegacao {
     Admin,
@@ -17,7 +15,6 @@ pub enum AlvoNavegacao {
     Comercial,
     Gerencia,
 }
-
 pub struct TelaDashboard {
     papel_usuario: PapelUsuario,
 }
@@ -27,8 +24,9 @@ impl TelaDashboard {
         Self { papel_usuario }
     }
 
-    pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> AcaoDashboard {
-        let mut acao = AcaoDashboard::Nenhuma;
+    // ATUALIZADO: A assinatura da função agora retorna Option<AppEvent>
+    pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
+        let mut evento_emitido = None;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Menu Principal");
@@ -42,7 +40,8 @@ impl TelaDashboard {
                 .show(ui, |ui| {
                     if self.papel_usuario == PapelUsuario::Administrador {
                         if botao_menu(ui, "👤", "Gerenciar Usuários").clicked() {
-                            acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Admin);
+                            // ATUALIZADO: Emite um evento de navegação
+                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
                         }
                     }
                     if matches!(
@@ -50,7 +49,7 @@ impl TelaDashboard {
                         PapelUsuario::Administrador | PapelUsuario::Tecnico
                     ) {
                         if botao_menu(ui, "🔧", "Ordens de Serviço").clicked() {
-                            acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Tecnico);
+                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
                         }
                     }
                     if matches!(
@@ -58,7 +57,7 @@ impl TelaDashboard {
                         PapelUsuario::Administrador | PapelUsuario::Comercial
                     ) {
                         if botao_menu(ui, "🛒", "Comercial").clicked() {
-                            acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Comercial);
+                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Comercial));
                         }
                     }
                     if matches!(
@@ -66,7 +65,7 @@ impl TelaDashboard {
                         PapelUsuario::Administrador | PapelUsuario::Financeiro
                     ) {
                         if botao_menu(ui, "💳", "Financeiro").clicked() {
-                            acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Financeiro);
+                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
                         }
                     }
                     if matches!(
@@ -74,16 +73,17 @@ impl TelaDashboard {
                         PapelUsuario::Administrador | PapelUsuario::Gerencia
                     ) {
                         if botao_menu(ui, "📈", "Gerência").clicked() {
-                            acao = AcaoDashboard::NavegarPara(AlvoNavegacao::Gerencia);
+                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
                         }
                     }
                 });
         });
 
-        acao
+        evento_emitido
     }
 }
 
+// A função `botao_menu` permanece exatamente a mesma.
 fn botao_menu(ui: &mut egui::Ui, icone: &str, texto: &str) -> egui::Response {
     let tamanho_botao = egui::vec2(160.0, 100.0);
     let (rect, response) = ui.allocate_exact_size(tamanho_botao, egui::Sense::click());
@@ -96,18 +96,16 @@ fn botao_menu(ui: &mut egui::Ui, icone: &str, texto: &str) -> egui::Response {
             .fill(visuals.bg_fill)
             .stroke(visuals.bg_stroke);
 
-        let _ = ui.put(rect, |ui: &mut egui::Ui| {
-            frame
-                .show(ui, |ui: &mut egui::Ui| {
-                    ui.centered_and_justified(|ui| {
-                        ui.vertical_centered(|ui| {
-                            ui.label(egui::RichText::new(icone).size(40.0));
-                            ui.add_space(5.0);
-                            ui.label(egui::RichText::new(texto).strong());
-                        });
+        frame.show(ui, |ui| {
+            ui.allocate_ui_at_rect(rect, |ui| {
+                ui.centered_and_justified(|ui| {
+                    ui.vertical_centered(|ui| {
+                        ui.label(egui::RichText::new(icone).size(40.0));
+                        ui.add_space(5.0);
+                        ui.label(egui::RichText::new(texto).strong());
                     });
-                })
-                .response
+                });
+            });
         });
     }
     response

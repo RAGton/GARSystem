@@ -5,5 +5,6 @@ pub mod painel_adm;
 pub mod painel_comercial;
 pub mod painel_financeiro;
 pub mod painel_gerencia;
+pub mod painel_os_edicao;
 pub mod painel_principal;
 pub mod painel_tecnico;
