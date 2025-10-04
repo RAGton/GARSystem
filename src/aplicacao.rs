@@ -2,14 +2,10 @@
 
 use crate::servicos::PapelUsuario;
 use crate::telas::{
-    componentes::sidebar::{self, AcaoSidebar},
-    login::TelaLogin,
-    painel_adm::TelaAdmin,
-    painel_os_edicao::TelaOsEdicao,
-    painel_principal::{self, TelaDashboard},
-    painel_tecnico::TelaTecnico,
+    componentes::sidebar, login::TelaLogin, painel_adm::TelaAdmin, painel_os_edicao::TelaOsEdicao,
+    painel_principal::TelaDashboard, painel_tecnico::TelaTecnico,
 };
-use eframe::egui;
+use eframe::egui::{self, TextureHandle};
 
 #[derive(Debug)]
 pub enum AppEvent {
@@ -48,6 +44,7 @@ pub struct AplicativoPrincipal {
     papel_usuario_logado: Option<PapelUsuario>,
     sidebar_aberto: bool,
     tela_ativa: TelaAtiva,
+    logo: Option<TextureHandle>,
 }
 
 fn definir_estilo_azul(ctx: &egui::Context, tema: Tema) {
@@ -70,6 +67,7 @@ impl AplicativoPrincipal {
             papel_usuario_logado: None,
             sidebar_aberto: true,
             tela_ativa: TelaAtiva::Dashboard,
+            logo: None,
         }
     }
 }
@@ -77,10 +75,17 @@ impl AplicativoPrincipal {
 impl eframe::App for AplicativoPrincipal {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         definir_estilo_azul(ctx, self.tema_atual);
+
+        if self.logo.is_none() {
+            if let Ok(imagem) = sidebar::carregar_logo() {
+                self.logo = Some(ctx.load_texture("logo_empresa", imagem, Default::default()));
+            }
+        }
+
         if self.papel_usuario_logado.is_some() {
             self.mostrar_ui_principal(ctx, frame);
         } else if let EstadoTela::Login(tela) = &mut self.estado_tela {
-            tela.update(ctx, frame);
+            tela.update(ctx, frame, self.logo.as_ref());
             if let Some(Ok(papel)) = tela.obter_resultado_login() {
                 self.papel_usuario_logado = Some(papel);
                 self.processar_evento(AppEvent::NavegarPara(TelaAtiva::Dashboard));
@@ -124,10 +129,10 @@ impl AplicativoPrincipal {
         let papel = self
             .papel_usuario_logado
             .expect("Usuário deveria estar logado");
-        if let Some(AppEvent::NavegarPara(tela_ativa)) =
-            sidebar::mostrar(ctx, papel, self.sidebar_aberto)
+
+        if let Some(evento) = sidebar::mostrar(ctx, papel, self.sidebar_aberto, self.logo.as_ref())
         {
-            self.processar_evento(AppEvent::NavegarPara(tela_ativa));
+            self.processar_evento(evento);
         }
 
         let mut evento_emitido: Option<AppEvent> = None;
@@ -155,7 +160,7 @@ impl AplicativoPrincipal {
                     TelaAtiva::Dashboard => TelaDashboard::new(papel).into(),
                     TelaAtiva::Admin => TelaAdmin::new().into(),
                     TelaAtiva::Tecnico => TelaTecnico::new().into(),
-                    _ => TelaDashboard::new(papel).into(), // Fallback
+                    _ => TelaDashboard::new(papel).into(),
                 };
             }
             AppEvent::AbrirEditorOS(os_id) => {
@@ -176,7 +181,7 @@ impl AplicativoPrincipal {
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize([0.0, 0.0].into()));
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([400.0, 600.0].into()));
     }
-} // <--- [CORREÇÃO] ESTA CHAVE ESTAVA FALTANDO
+}
 
 // Conversões `From`
 impl From<TelaLogin> for EstadoTela {

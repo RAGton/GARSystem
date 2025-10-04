@@ -6,8 +6,9 @@ use crate::telas::painel_principal::AlvoNavegacao;
 use eframe::egui::{self, ColorImage, TextureHandle};
 use std::collections::HashSet;
 
-// A função para carregar a imagem do arquivo.
-fn carregar_imagem_de_arquivo(caminho: &std::path::Path) -> Result<ColorImage, image::ImageError> {
+// A função agora é pública para ser chamada pelo `aplicacao.rs`
+pub fn carregar_logo() -> Result<ColorImage, image::ImageError> {
+    let caminho = std::path::Path::new("./assets/logo.png");
     let imagem = image::io::Reader::open(caminho)?.decode()?;
     let tamanho = [imagem.width() as _, imagem.height() as _];
     let buffer_imagem = imagem.to_rgba8();
@@ -18,61 +19,43 @@ fn carregar_imagem_de_arquivo(caminho: &std::path::Path) -> Result<ColorImage, i
     ))
 }
 
-// O enum `AcaoSidebar` foi removido.
-
-/// Desenha a sidebar e retorna um `AppEvent` se o usuário clicar em um botão de navegação.
 pub fn mostrar(
     ctx: &egui::Context,
     papel_usuario: PapelUsuario,
     sidebar_aberto: bool,
+    logo: Option<&TextureHandle>, // Recebe a textura já carregada
 ) -> Option<AppEvent> {
     let mut evento_emitido: Option<AppEvent> = None;
 
-    // A lógica de permissões permanece a mesma.
     let mut permissoes: HashSet<AlvoNavegacao> = HashSet::new();
     use PapelUsuario::*;
     match papel_usuario {
         Administrador => {
-            permissoes.insert(AlvoNavegacao::Admin);
-            permissoes.insert(AlvoNavegacao::Tecnico);
-            permissoes.insert(AlvoNavegacao::Financeiro);
-            permissoes.insert(AlvoNavegacao::Comercial);
-            permissoes.insert(AlvoNavegacao::Gerencia);
+            permissoes.extend([
+                AlvoNavegacao::Admin,
+                AlvoNavegacao::Tecnico,
+                AlvoNavegacao::Financeiro,
+                AlvoNavegacao::Comercial,
+                AlvoNavegacao::Gerencia,
+            ]);
         }
-        Gerencia => { /* ... */ }
         Tecnico => {
             permissoes.insert(AlvoNavegacao::Tecnico);
         }
-        Financeiro => { /* ... */ }
-        Comercial => { /* ... */ }
+        _ => {}
     }
 
     egui::SidePanel::left("sidebar")
         .resizable(true)
         .default_width(200.0)
-        .width_range(150.0..=300.0)
         .show_animated(ctx, sidebar_aberto, |ui| {
             ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
-                // --- [NOVO] LÓGICA PARA CARREGAR E EXIBIR O LOGO ---
-                // Esta é uma forma idiomática no egui de carregar uma textura apenas uma vez.
-                // Ele usa o armazenamento de dados do próprio contexto para guardar a textura.
-                let logo_texture: &TextureHandle = ui.ctx().data_mut(|d| {
-                    d.get_persisted(egui::Id::new("logo_texture"))
-                        .unwrap_or_else(|| {
-                            let imagem = carregar_imagem_de_arquivo(std::path::Path::new(
-                                "./assets/logo.png",
-                            ))
-                            .expect("Não foi possível carregar o logo.");
-                            ui.ctx()
-                                .load_texture("logo_empresa", imagem, Default::default())
-                        })
-                });
-
                 ui.add_space(10.0);
-                ui.add(egui::Image::new(logo_texture).max_width(180.0));
+                if let Some(logo_texture) = logo {
+                    ui.add(egui::Image::new(logo_texture).max_width(180.0));
+                }
                 ui.add_space(10.0);
                 ui.separator();
-                // --- FIM DA LÓGICA DO LOGO ---
 
                 ui.collapsing("📊 Relatório de OS", |ui| {
                     ui.label("Em aberto: 5");
@@ -83,39 +66,18 @@ pub fn mostrar(
 
                 ui.label("Navegação");
 
-                // [CORREÇÃO] Os botões agora emitem `AppEvent` diretamente e usam `Button::new`.
                 if ui.add(egui::Button::new("🏠 Dashboard")).clicked() {
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
                 }
-
                 if permissoes.contains(&AlvoNavegacao::Admin)
                     && ui.add(egui::Button::new("⚙️ Admin")).clicked()
                 {
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
                 }
-
                 if permissoes.contains(&AlvoNavegacao::Tecnico)
                     && ui.add(egui::Button::new("🔧 Técnico")).clicked()
                 {
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
-                }
-
-                if permissoes.contains(&AlvoNavegacao::Financeiro)
-                    && ui.add(egui::Button::new("💳 Financeiro")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
-                }
-
-                if permissoes.contains(&AlvoNavegacao::Comercial)
-                    && ui.add(egui::Button::new("🛒 Comercial")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Comercial));
-                }
-
-                if permissoes.contains(&AlvoNavegacao::Gerencia)
-                    && ui.add(egui::Button::new("📈 Gerência")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
                 }
             });
 

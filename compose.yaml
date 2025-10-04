@@ -14,7 +14,7 @@ services:
       DATABASE_URL: ${DATABASE_URL}
       RUST_LOG: "info"
     depends_on:
-      # MODIFICADO: Agora o 'server' depende da condição de saúde do 'db'
+      # [CORREÇÃO] Agora o 'server' depende da CONDIÇÃO de saúde do 'db'
       db:
         condition: service_healthy
 
@@ -31,14 +31,12 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-    # [NOVO] Seção de verificação de saúde
+    # [NOVO] Seção de verificação de saúde.
     healthcheck:
-      # Comando que o Podman executará para verificar se o MySQL está pronto.
-      # Ele tenta executar um comando 'ping' no servidor MySQL.
       test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
-      interval: 10s   # Verifica a cada 10 segundos.
-      timeout: 5s     # Considera a verificação falha se demorar mais de 5 segundos.
-      retries: 5      # Tenta 5 vezes antes de marcar o contêiner como "unhealthy".
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   mysql_data:

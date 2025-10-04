@@ -1,21 +1,10 @@
 // src/telas/login.rs
 
 use crate::servicos::{ErroAplicacao, PapelUsuario};
-use eframe::egui::{self, ColorImage, TextureHandle};
+use eframe::egui::{self, TextureHandle};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 use std::thread;
-
-fn carregar_imagem_de_arquivo(caminho: &std::path::Path) -> Result<ColorImage, image::ImageError> {
-    let imagem = image::io::Reader::open(caminho)?.decode()?;
-    let tamanho = [imagem.width() as _, imagem.height() as _];
-    let buffer_imagem = imagem.to_rgba8();
-    let pixels = buffer_imagem.as_flat_samples();
-    Ok(ColorImage::from_rgba_unmultiplied(
-        tamanho,
-        pixels.as_slice(),
-    ))
-}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum EstadoLogin {
@@ -34,7 +23,6 @@ pub struct TelaLogin {
     nome_usuario: String,
     senha: String,
     estado: Arc<Mutex<EstadoLogin>>,
-    logo: Option<TextureHandle>,
 }
 
 impl TelaLogin {
@@ -43,7 +31,6 @@ impl TelaLogin {
             nome_usuario: String::new(),
             senha: String::new(),
             estado: Arc::new(Mutex::new(EstadoLogin::Ocioso)),
-            logo: None,
         }
     }
 
@@ -64,29 +51,24 @@ impl TelaLogin {
         }
     }
 
-    pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        if self.logo.is_none() {
-            if let Ok(imagem) =
-                carregar_imagem_de_arquivo(std::path::Path::new("./assets/logo.png"))
-            {
-                self.logo = Some(ctx.load_texture("logo-empresa", imagem, Default::default()));
-            }
-        }
-
+    pub fn update(
+        &mut self,
+        ctx: &egui::Context,
+        _frame: &mut eframe::Frame,
+        logo: Option<&TextureHandle>,
+    ) {
         let estado_atual = self.estado.lock().unwrap().clone();
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
                 ui.add_space(ui.available_height() * 0.1);
-                if let Some(logo) = &self.logo {
-                    ui.add(egui::Image::new(logo).max_size(egui::vec2(280.0, 158.0)));
+                
+                if let Some(logo_texture) = logo {
+                    ui.add(egui::Image::new(logo_texture).max_size(egui::vec2(280.0, 158.0)));
                 }
+
                 ui.add_space(20.0);
-                ui.label(
-                    egui::RichText::new("Bem-vindo! Faça o login para continuar.")
-                        .italics()
-                        .size(16.0),
-                );
+                ui.label(egui::RichText::new("Bem-vindo! Faça o login para continuar.").italics().size(16.0));
                 ui.add_space(30.0);
 
                 ui.add_enabled_ui(!matches!(estado_atual, EstadoLogin::EmProgresso), |ui| {
@@ -112,10 +94,7 @@ impl TelaLogin {
                                     let client = reqwest::blocking::Client::new();
                                     let response = client
                                         .post("http://localhost:3000/login")
-                                        .json(&serde_json::json!({
-                                            "usuario": nome_usuario_clone,
-                                            "senha": senha_clone
-                                        }))
+                                        .json(&serde_json::json!({ "usuario": nome_usuario_clone, "senha": senha_clone }))
                                         .send();
 
                                     let mut estado = estado_clone.lock().unwrap();
@@ -123,31 +102,15 @@ impl TelaLogin {
                                         Ok(res) => {
                                             if res.status().is_success() {
                                                 match res.json::<LoginResponse>() {
-                                                    Ok(login_res) => {
-                                                        *estado =
-                                                            EstadoLogin::Sucesso(login_res.papel)
-                                                    }
-                                                    Err(e) => {
-                                                        *estado = EstadoLogin::Falha(format!(
-                                                            "Erro ao processar resposta: {}",
-                                                            e
-                                                        ))
-                                                    }
+                                                    Ok(login_res) => *estado = EstadoLogin::Sucesso(login_res.papel),
+                                                    Err(e) => *estado = EstadoLogin::Falha(format!("Erro ao processar resposta: {}", e)),
                                                 }
                                             } else {
-                                                *estado = EstadoLogin::Falha(
-                                                    "Usuário ou senha inválidos.".to_string(),
-                                                );
+                                                *estado = EstadoLogin::Falha("Usuário ou senha inválidos.".to_string());
                                             }
                                         }
-                                        Err(e) => {
-                                            *estado = EstadoLogin::Falha(format!(
-                                                "Erro de conexão com o servidor: {}",
-                                                e
-                                            ))
-                                        }
+                                        Err(e) => *estado = EstadoLogin::Falha(format!("Erro de conexão com o servidor: {}", e)),
                                     }
-
                                     ctx_clone.request_repaint();
                                 });
                             }
@@ -158,14 +121,11 @@ impl TelaLogin {
                         });
                     });
                 });
-
+                
                 match estado_atual {
                     EstadoLogin::EmProgresso => {
                         ui.add_space(10.0);
-                        ui.horizontal(|ui| {
-                            ui.spinner();
-                            ui.label("Entrando...");
-                        });
+                        ui.horizontal(|ui| { ui.spinner(); ui.label("Entrando..."); });
                     }
                     EstadoLogin::Falha(msg_erro) => {
                         ui.add_space(10.0);
@@ -173,22 +133,13 @@ impl TelaLogin {
                     }
                     _ => {}
                 }
-
-                // Rodapé
+                
                 ui.add_space(ui.available_height() - 40.0);
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.label(
-                        egui::RichText::new("© RAG - 2025")
-                            .color(egui::Color32::GRAY)
-                            .size(12.0),
-                    );
+                    ui.label(egui::RichText::new("© RAG - 2025").color(egui::Color32::GRAY).size(12.0));
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(
-                            egui::RichText::new(format!("Versão: {}", env!("CARGO_PKG_VERSION")))
-                                .color(egui::Color32::GRAY)
-                                .size(12.0),
-                        );
+                        ui.label(egui::RichText::new(format!("Versão: {}", env!("CARGO_PKG_VERSION"))).color(egui::Color32::GRAY).size(12.0));
                     });
                 });
             });

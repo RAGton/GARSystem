@@ -4,12 +4,6 @@ use crate::aplicacao::AppEvent;
 use crate::servicos::{self, InfoUsuario, PapelUsuario};
 use eframe::egui;
 
-// Este enum não é mais necessário na nova arquitetura de eventos.
-// pub enum AcaoAdmin {
-//     Nenhuma,
-//     Voltar,
-// }
-
 struct FormularioNovoUsuario {
     nome_usuario: String,
     senha: String,
@@ -34,8 +28,17 @@ impl Default for FormularioNovoUsuario {
 pub struct TelaAdmin {
     usuarios: Vec<InfoUsuario>,
     formulario: FormularioNovoUsuario,
+
+    // Estado para a janela de confirmação de remoção
     mostrar_janela_confirmacao: bool,
     usuario_para_remover: Option<String>,
+
+    // [NOVO] Estado para a janela de alteração de senha
+    mostrar_janela_alterar_senha: bool,
+    usuario_para_alterar_senha: Option<InfoUsuario>,
+    nova_senha: String,
+    confirmar_nova_senha: String,
+    mensagem_alterar_senha: String,
 }
 
 impl TelaAdmin {
@@ -47,6 +50,11 @@ impl TelaAdmin {
             formulario: FormularioNovoUsuario::default(),
             mostrar_janela_confirmacao: false,
             usuario_para_remover: None,
+            mostrar_janela_alterar_senha: false,
+            usuario_para_alterar_senha: None,
+            nova_senha: String::new(),
+            confirmar_nova_senha: String::new(),
+            mensagem_alterar_senha: String::new(),
         }
     }
 
@@ -55,7 +63,7 @@ impl TelaAdmin {
         self.usuarios = servicos::listar_usuarios();
     }
 
-    // [CORREÇÃO] A função agora retorna `Option<AppEvent>` para se integrar ao sistema de eventos.
+    // A função agora retorna `Option<AppEvent>` para se integrar ao sistema de eventos.
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         let mut evento_emitido = None;
 
@@ -66,11 +74,11 @@ impl TelaAdmin {
                     evento_emitido = Some(AppEvent::VoltarParaDashboard);
                 }
                 ui.separator();
-                ui.heading("Painel de Administração");
+                ui.heading("Painel de Administração (Usuários)");
             });
         });
 
-        let modal_aberto = self.mostrar_janela_confirmacao;
+        let modal_aberto = self.mostrar_janela_confirmacao || self.mostrar_janela_alterar_senha;
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.add_enabled_ui(!modal_aberto, |ui| {
@@ -121,21 +129,37 @@ impl TelaAdmin {
                 ui.heading("Usuários Existentes");
                 egui::ScrollArea::vertical().show(ui, |ui| {
                     let mut usuario_a_remover = None;
+                    let mut usuario_a_alterar_senha = None;
+
                     for usuario in &self.usuarios {
                         ui.horizontal(|ui| {
                             ui.label(format!(
                                 "ID: {:<3} - Usuário: {}",
                                 usuario.id, usuario.nome_usuario
                             ));
-                            if usuario.nome_usuario != "admin" && ui.button("Remover").clicked() {
-                                usuario_a_remover = Some(usuario.nome_usuario.clone());
+
+                            if usuario.nome_usuario != "admin" {
+                                if ui.button("Alterar Senha").clicked() {
+                                    usuario_a_alterar_senha = Some(usuario.clone());
+                                }
+                                if ui.button("Remover").clicked() {
+                                    usuario_a_remover = Some(usuario.nome_usuario.clone());
+                                }
                             }
                         });
                         ui.separator();
                     }
+
                     if let Some(nome) = usuario_a_remover {
                         self.usuario_para_remover = Some(nome);
                         self.mostrar_janela_confirmacao = true;
+                    }
+                    if let Some(usuario) = usuario_a_alterar_senha {
+                        self.usuario_para_alterar_senha = Some(usuario);
+                        self.mostrar_janela_alterar_senha = true;
+                        self.nova_senha.clear();
+                        self.confirmar_nova_senha.clear();
+                        self.mensagem_alterar_senha.clear();
                     }
                 });
             });
@@ -143,6 +167,9 @@ impl TelaAdmin {
 
         if self.mostrar_janela_confirmacao {
             self.mostrar_modal_confirmacao(ctx);
+        }
+        if self.mostrar_janela_alterar_senha {
+            self.mostrar_modal_alterar_senha(ctx);
         }
 
         evento_emitido
@@ -214,6 +241,73 @@ impl TelaAdmin {
                 });
         } else {
             self.mostrar_janela_confirmacao = false;
+        }
+    }
+
+    // [NOVO] Função que desenha o modal para alterar a senha.
+    fn mostrar_modal_alterar_senha(&mut self, ctx: &egui::Context) {
+        if let Some(usuario) = &self.usuario_para_alterar_senha {
+            let mut fechar_janela = false;
+
+            egui::Window::new("Alterar Senha")
+                .collapsible(false)
+                .resizable(false)
+                .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+                .show(ctx, |ui| {
+                    ui.heading(format!("Alterando senha para: {}", usuario.nome_usuario));
+                    ui.add_space(10.0);
+
+                    ui.label("Nova Senha:");
+                    ui.add(egui::TextEdit::singleline(&mut self.nova_senha).password(true));
+
+                    ui.label("Confirmar Nova Senha:");
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.confirmar_nova_senha).password(true),
+                    );
+
+                    if !self.mensagem_alterar_senha.is_empty() {
+                        ui.add_space(10.0);
+                        let cor = if self.mensagem_alterar_senha.starts_with("Erro") {
+                            egui::Color32::RED
+                        } else {
+                            egui::Color32::GREEN
+                        };
+                        ui.label(egui::RichText::new(&self.mensagem_alterar_senha).color(cor));
+                    }
+
+                    ui.add_space(20.0);
+                    ui.horizontal(|ui| {
+                        if ui.button("Salvar Nova Senha").clicked() {
+                            if self.nova_senha.is_empty() {
+                                self.mensagem_alterar_senha =
+                                    "Erro: A senha não pode estar em branco.".to_string();
+                            } else if self.nova_senha != self.confirmar_nova_senha {
+                                self.mensagem_alterar_senha =
+                                    "Erro: As senhas não coincidem.".to_string();
+                            } else {
+                                // LÓGICA DE NEGÓCIO:
+                                // No futuro, aqui você fará a chamada para a sua API/backend.
+                                // Ex: servicos::alterar_senha_usuario(usuario.id, &self.nova_senha)
+                                println!(
+                                    "Senha para o usuário ID {} alterada para: {}",
+                                    usuario.id, self.nova_senha
+                                );
+                                self.mensagem_alterar_senha =
+                                    "Senha alterada com sucesso!".to_string();
+                            }
+                        }
+                        if ui.button("Fechar").clicked() {
+                            fechar_janela = true;
+                        }
+                    });
+                });
+
+            if fechar_janela {
+                self.mostrar_janela_alterar_senha = false;
+                self.usuario_para_alterar_senha = None;
+            }
+        } else {
+            self.mostrar_janela_alterar_senha = false;
         }
     }
 }

@@ -5,7 +5,6 @@ mod aplicacao;
 mod banco_de_dados;
 mod servicos;
 mod telas;
-
 use aplicacao::AplicativoPrincipal;
 use eframe::{egui, CreationContext};
 
@@ -13,22 +12,22 @@ use eframe::{egui, CreationContext};
 fn configurar_fontes(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
 
-    // [CORREÇÃO 1] Corrigido o caminho para a pasta 'fontes' que você está usando.
-    // [CORREÇÃO 2] Adicionado `.into()` para a nova API do egui.
+    // Carrega os dados da fonte principal (JetBrains Mono).
+    // A API do egui agora espera um `Arc<FontData>`, e `.into()` faz a conversão.
     fonts.font_data.insert(
         "JetBrainsMono".to_owned(),
-        egui::FontData::from_static(include_bytes!("../assets/fontes/JetBrainsMono-Regular.ttf"))
+        egui::FontData::from_static(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"))
             .into(),
     );
 
+    // Carrega os dados da fonte de emojis.
     fonts.font_data.insert(
         "NotoEmoji".to_owned(),
-        egui::FontData::from_static(include_bytes!(
-            "../assets/fontes/NotoColorEmoji-Regular.ttf"
-        ))
-        .into(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/NotoColorEmoji-Regular.ttf"))
+            .into(),
     );
 
+    // Define a ordem de prioridade para as fontes, garantindo que os símbolos apareçam.
     fonts
         .families
         .entry(egui::FontFamily::Proportional)
@@ -73,7 +72,7 @@ fn main() -> Result<(), eframe::Error> {
         Box::new(|cc: &CreationContext| {
             configurar_fontes(&cc.egui_ctx);
 
-            // [CORREÇÃO 3] Chamamos `AplicativoPrincipal::new()` sem argumentos.
+            // Chamamos `AplicativoPrincipal::new()` sem argumentos.
             Ok(Box::new(AplicativoPrincipal::new()))
         }),
     )
