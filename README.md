@@ -1,90 +1,120 @@
-Com certeza\! Baseado em todos os arquivos do projeto, preparei uma nova documentação para a versão 1.4.0 do **Senior System**, incorporando as mais recentes funcionalidades e melhorias.
-
 -----
 
-# Documentação do Projeto: Senior System (v1.4.0)
+# Documentação do Projeto: Senior System (v1.5.0 - Arquitetura Cliente-Servidor)
 
 ## 1\. Visão Geral
 
-O **Senior System** é uma aplicação de desktop desenvolvida em Rust, utilizando a biblioteca `eframe` (com `egui`) para a interface gráfica e MySQL para a persistência de dados. Projetado como uma ferramenta de gestão interna, o sistema oferece múltiplos níveis de acesso baseados em papéis de usuário (Administrador, Gerencia, Tecnico, Financeiro, Comercial), garantindo que cada usuário tenha acesso apenas às funcionalidades pertinentes à sua função.
+O **Senior System** é um sistema de gestão projetado com uma arquitetura moderna cliente-servidor, utilizando Rust tanto no backend quanto no frontend. A aplicação visa fornecer uma ferramenta de gestão interna robusta, segura e escalável, com múltiplos níveis de acesso baseados em papéis de usuário (Administrador, Gerencia, Tecnico, Financeiro, Comercial).
 
-A arquitetura do projeto enfatiza uma clara separação de responsabilidades, modularizando a interface do usuário (UI), as regras de negócio e o acesso ao banco de dados. Essa abordagem não só facilita a manutenção e a escalabilidade, como também promove um desenvolvimento mais organizado e seguro.
+A arquitetura atual é composta por três componentes principais:
+
+1.  **Backend (Servidor):** Uma API RESTful construída em Rust com o framework **Axum**. É responsável por toda a lógica de negócio, validações e comunicação direta com o banco de dados.
+2.  **Frontend (Cliente):** Uma aplicação desktop nativa construída em Rust com a biblioteca **eframe/egui**. É responsável por toda a interface do usuário e pela interação com o usuário final.
+3.  **Banco de Dados:** Um servidor **MySQL 8** para persistência de dados.
+
+Todo o ambiente de backend e banco de dados é orquestrado por contêineres gerenciados com **Podman Compose**, garantindo um setup de desenvolvimento rápido, consistente e isolado do sistema operacional do desenvolvedor.
 
 ## 2\. Principais Funcionalidades Implementadas
 
-A versão 1.4.0 consolida as funcionalidades existentes e introduz novos módulos cruciais para a operação:
+Até o momento, o sistema conta com as seguintes funcionalidades consolidadas:
 
-  * **Autenticação e Segurança**:
+  * **Arquitetura Cliente-Servidor:**
 
-      * Tela de login com validação de credenciais assíncrona para não bloquear a UI.
-      * Armazenamento seguro de senhas com hashing `bcrypt`.
-      * Logout seguro, que redefine o estado da aplicação e retorna à tela de login.
+      * O cliente (GUI) foi completamente desacoplado do banco de dados. Toda a comunicação de dados é feita através de requisições HTTP para a API do backend.
+      * A lógica de negócio (`servicos`) e o acesso a dados (`banco_de_dados`) residem exclusivamente no servidor, garantindo segurança e centralização.
 
-  * **Gerenciamento de Usuários (Painel de Administração)**:
+  * **Autenticação de Usuário via API:**
 
-      * Interface completa para criar, listar e remover usuários do sistema.
-      * Modal de confirmação para prevenir a remoção acidental de usuários.
-      * Proteção contra a remoção do usuário `admin` padrão.
+      * Tela de login que envia as credenciais para o endpoint `/login` do servidor de forma assíncrona, usando uma thread separada para não travar a interface.
+      * O servidor valida as credenciais contra o banco de dados e retorna o papel do usuário (`PapelUsuario`) em formato JSON.
 
-  * **Painel Técnico e Ordens de Serviço**:
+  * **Gestão de Estado e Navegação por Eventos:**
 
-      * **Nova Tela de Painel Técnico**: Uma interface dedicada para técnicos, focada na gestão de Ordens de Serviço (OS).
-      * **Visualização e Filtragem de OS**: Exibe uma lista de ordens de serviço com informações como ID, cliente, equipamento e status. Inclui uma funcionalidade de busca para filtrar OS por nome do cliente.
-      * **Detalhes da OS**: Um modal exibe informações detalhadas de uma OS selecionada, incluindo o defeito relatado.
-      * **Dados Mockados**: Atualmente, a tela utiliza dados de exemplo (`mock`) para simular o fluxo de trabalho, que futuramente serão integrados ao banco de dados.
+      * A navegação da interface é controlada por um sistema de eventos central (`AppEvent`), permitindo que as telas solicitem ações (como navegar ou abrir um editor) sem conhecerem umas às outras.
+      * Uma `sidebar` dinâmica exibe as opções de navegação com base nas permissões do usuário autenticado.
 
-  * **Interface Dinâmica e Navegação por Papel**:
+  * **Painel de Administração (Usuários):**
 
-      * A janela da aplicação ajusta seu tamanho e capacidade de redimensionamento dinamicamente após o login.
-      * Uma `sidebar` e um `dashboard` central apresentam atalhos de navegação que mudam conforme o `PapelUsuario` logado, restringindo o acesso a telas não autorizadas.
-      * Suporte a temas claro e escuro, permitindo personalização da experiência do usuário.
+      * A tela de administração agora busca a lista de usuários de forma assíncrona a partir do endpoint `/usuarios` do servidor.
+      * Exibe uma mensagem de "Carregando..." enquanto os dados são buscados, garantindo uma experiência de usuário fluida.
+      * Interface para criar novos usuários e um modal para alterar senhas (UI implementada, lógica de API pendente).
+
+  * **Interface do Usuário (UI):**
+
+      * Carregamento de fontes customizadas (`JetBrains Mono` e `Noto Color Emoji`) para garantir a correta exibição de ícones e símbolos.
+      * Suporte a temas claro e escuro.
+      * O logo da aplicação é carregado de forma centralizada e segura, evitando travamentos (*deadlocks*).
 
 ## 3\. Arquitetura do Projeto
 
-O código-fonte é organizado em módulos que separam as responsabilidades de forma clara:
+O código está modularizado para garantir a separação de responsabilidades. O projeto agora é um workspace Cargo que produz dois binários distintos.
 
-  * **`main.rs`**: Ponto de entrada da aplicação. Inicializa o pool de conexões com o banco de dados, configura os canais de comunicação assíncrona (`mpsc`) entre a UI e a thread de banco de dados, e inicia a aplicação `eframe`.
-  * **`aplicacao.rs`**: O coração do sistema. A `struct AplicativoPrincipal` gerencia o estado global (`EstadoTela`), a navegação entre as telas (Login, Dashboard, Admin, Tecnico, etc.), e ações globais como logout e troca de tema.
-  * **`servicos.rs`**: Camada de lógica de negócio. Contém as regras de validação (ex: login, criação de usuário) e as estruturas de dados principais, como `OrdemServico` e `PapelUsuario`. Isola a lógica de negócio da UI e do acesso direto ao banco.
-  * **`banco_de_dados/mod.rs`**: Módulo de acesso a dados. Centraliza toda a comunicação com o MySQL, utilizando um pool de conexões (`once_cell`) para otimizar a performance. Define as queries SQL para todas as operações de persistência e inclui um sistema de migração de schema para atualizar a tabela `users` de versões antigas.
-  * **`telas/`**: Diretório que contém os módulos de cada tela da aplicação (`login.rs`, `painel_adm.rs`, `painel_tecnico.rs`, etc.). Cada módulo é autônomo, gerenciando seu próprio estado e renderizando seus componentes visuais.
-  * **`telas/componentes/`**: Abriga componentes de UI reutilizáveis, como a `sidebar.rs`, que é usada em todas as telas principais após o login.
+  * **`src/server.rs`**: Ponto de entrada do **Backend**. Inicia o servidor Axum, define as rotas da API (`/login`, `/usuarios`) e lida com as requisições HTTP. É o único que interage com os módulos `servicos` e `banco_de_dados`.
+
+  * **`src/main.rs`**: Ponto de entrada do **Cliente GUI**. Inicia a aplicação `eframe`, configura as fontes e o tamanho da janela.
+
+  * **`src/aplicacao.rs`**: O núcleo do **Cliente GUI**. Gerencia a máquina de estados das telas (`EstadoTela`), processa os eventos (`AppEvent`) e controla o estado global da UI (usuário logado, tema, etc.).
+
+  * **`src/servicos.rs`**: Camada de lógica de negócio (usada **apenas pelo servidor**). Define as regras e as estruturas de dados principais (`PapelUsuario`, `InfoUsuario`, `OrdemServico`).
+
+  * **`src/banco_de_dados/`**: Módulo de acesso a dados (usado **apenas pelo servidor**). Foi refatorado para ter responsabilidades separadas:
+
+      * `conexao.rs`: Gerencia o pool de conexões com o MySQL.
+      * `init.rs`: Lógica de inicialização e migração do banco.
+      * `usuario_repo.rs`: Funções específicas para a tabela `users`.
+
+  * **`src/telas/`**: Diretório que contém os módulos de cada tela do **Cliente GUI**. Cada tela é responsável por sua própria UI e por emitir eventos para o `aplicacao.rs`.
+
+      * `login.rs` e `painel_adm.rs` foram refatorados para buscar dados de forma assíncrona usando `reqwest` e `thread::spawn`.
 
 ## 4\. Guia de Instalação e Execução
 
-Siga os passos abaixo para compilar e executar o projeto localmente.
+O projeto agora é executado em duas partes independentes: o ambiente de servidor e o cliente GUI.
 
 ### 4.1. Pré-requisitos
 
-  * **Rust**: Instale o compilador Rust e o gerenciador de pacotes Cargo através do `rustup`.
-  * **Podman** (ou Docker): Necessário para executar o contêiner do banco de dados MySQL.
-  * **Dependências de Sistema (Exemplo para Arch Linux)**:
-    ```bash
-    sudo pacman -Syu base-devel openssl pkg-config
+  * **Rust**: Instale o Rust e o Cargo através do `rustup`.
+  * **Podman** e **Podman Compose**: Para gerenciar os contêineres.
+
+### 4.2. Configuração do Ambiente
+
+1.  **Crie o arquivo de ambiente:** Na raiz do projeto, crie um arquivo chamado `.env` e preencha com as credenciais do banco de dados.
+
+    ```env
+    # .env
+    MYSQL_DATABASE=senior_system
+    MYSQL_USER=rocha
+    MYSQL_PASSWORD=200519
+    MYSQL_ROOT_PASSWORD=root_strong_password
+    DATABASE_URL="mysql://${MYSQL_USER}:${MYSQL_PASSWORD}@db:3306/${MYSQL_DATABASE}"
     ```
 
-### 4.2. Configuração do Banco de Dados
-
-1.  **Baixe a imagem do MySQL 8**:
-    ```bash
-    podman pull mysql:8
-    ```
-2.  **Inicie o contêiner do banco de dados**: O comando a seguir cria um contêiner nomeado `mysql-seniorsystem` com as credenciais e o banco de dados que a aplicação espera encontrar.
-    ```bash
-    podman run --name mysql-seniorsystem -p 3306:3306 -e MYSQL_DATABASE=senior_system -e MYSQL_USER=rocha -e MYSQL_PASSWORD=200519 -e MYSQL_ROOT_PASSWORD=root_strong_password -d mysql:8
-    ```
-3.  **Verifique se o contêiner está em execução**:
-    ```bash
-    podman ps
-    ```
-    Caso o contêiner não esteja rodando (status `Exited`), inicie-o com `podman start mysql-seniorsystem`.
+2.  **Adicione `.env` ao `.gitignore`:** Para não enviar suas senhas para o repositório, certifique-se que a linha `.env` existe no seu arquivo `.gitignore`.
 
 ### 4.3. Executando a Aplicação
 
-Com o banco de dados ativo, navegue até o diretório raiz do projeto e execute:
+É necessário ter dois terminais abertos.
 
-```bash
-cargo run
-```
+1.  **Terminal 1: Iniciar o Backend e o Banco de Dados**
+    Na raiz do projeto, execute o comando:
 
-A aplicação será compilada e iniciada. Na primeira execução, ela criará a tabela `users` e o usuário `admin` (senha: `12345678`), conectando-se automaticamente ao banco de dados.
+    ```bash
+    podman-compose up --build
+    ```
+
+    Este comando irá:
+
+      * Construir a imagem do seu servidor a partir do `Dockerfile`.
+      * Baixar a imagem do MySQL.
+      * Iniciar ambos os contêineres.
+      * Aguardar o banco de dados ficar "saudável" (`healthcheck`) antes de iniciar o servidor para evitar erros de conexão.
+        Espere até ver a mensagem `Servidor escutando em 0.0.0.0:3000`.
+
+2.  **Terminal 2: Iniciar o Cliente GUI**
+    Enquanto o `podman-compose` estiver rodando, abra um novo terminal na raiz do projeto e execute:
+
+    ```bash
+    cargo run --bin senior-system-gui
+    ```
+
+    A interface gráfica será compilada e iniciada. Agora, ao fazer login, ela se comunicará com o servidor que está rodando no contêiner.

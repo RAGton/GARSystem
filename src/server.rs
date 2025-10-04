@@ -10,7 +10,7 @@ use axum::{
     Router,
 };
 use serde::{Deserialize, Serialize};
-use servicos::{ErroAplicacao, PapelUsuario};
+use servicos::{ErroAplicacao, InfoUsuario, PapelUsuario}; // Importar InfoUsuario
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -29,12 +29,13 @@ struct LoginResponse {
 async fn main() {
     servicos::inicializar();
 
-    // [CORREÇÃO] A sintaxe correta é usar `Any` diretamente, sem `::new()`.
     let cors = CorsLayer::new().allow_origin(Any);
 
     let app = Router::new()
-        .route("/login", post(handler_login))
         .route("/", get(|| async { "Servidor Senior System no ar!" }))
+        .route("/login", post(handler_login))
+        // [NOVO] Rota para buscar a lista de todos os usuários.
+        .route("/usuarios", get(handler_listar_usuarios))
         .layer(cors);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
@@ -59,4 +60,11 @@ async fn handler_login(
             }
         }
     }
+}
+
+// [NOVA FUNÇÃO] Handler que responde à requisição GET /usuarios.
+async fn handler_listar_usuarios() -> Result<Json<Vec<InfoUsuario>>, StatusCode> {
+    // A chamada ao `servicos` aqui funciona, pois está sendo executada no servidor.
+    let usuarios = servicos::listar_usuarios();
+    Ok(Json(usuarios))
 }
