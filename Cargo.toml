@@ -1,6 +1,6 @@
 [package]
 name = "SeniorSystem"
-version = "1.6.1"
+version = "1.6.4"
 edition = "2021"
 # A linha abaixo é opcional, mas ajuda a definir qual programa rodar com o comando "cargo run" simples.
 default-run = "senior-system-gui"

@@ -42,7 +42,15 @@ pub fn mostrar(
         Tecnico => {
             permissoes.insert(AlvoNavegacao::Tecnico);
         }
-        _ => {}
+        Financeiro => {
+            permissoes.insert(AlvoNavegacao::Financeiro);
+        }
+        Comercial => {
+            permissoes.insert(AlvoNavegacao::Comercial);
+        }
+        Gerencia => {
+            permissoes.insert(AlvoNavegacao::Gerencia);
+        }
     }
 
     egui::SidePanel::left("sidebar")
@@ -63,7 +71,7 @@ pub fn mostrar(
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
                 }
                 if permissoes.contains(&AlvoNavegacao::Admin)
-                    && ui.add(egui::Button::new("⚙️ Admin")).clicked()
+                    && ui.add(egui::Button::new("💼 Administrativo")).clicked()
                 {
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
                 }
@@ -71,6 +79,21 @@ pub fn mostrar(
                     && ui.add(egui::Button::new("🔧 Técnico")).clicked()
                 {
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
+                }
+                if permissoes.contains(&AlvoNavegacao::Financeiro)
+                    && ui.add(egui::Button::new("💰 Financeiro")).clicked()
+                {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
+                }
+                if permissoes.contains(&AlvoNavegacao::Comercial)
+                    && ui.add(egui::Button::new("📈 Comercial")).clicked()
+                {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Comercial));
+                }
+                if permissoes.contains(&AlvoNavegacao::Gerencia)
+                    && ui.add(egui::Button::new("📊 Gerência")).clicked()
+                {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
                 }
             });
 

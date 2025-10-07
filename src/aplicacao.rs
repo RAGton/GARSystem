@@ -275,7 +275,8 @@ impl AplicativoPrincipal {
             AppEvent::VoltarParaDashboard => {
                 if let Some(papel) = self.papel_usuario_logado {
                     self.tela_ativa = TelaAtiva::Dashboard;
-                    self.estado_tela = Some(TelaDashboard::new(papel, Arc::clone(&self.endereco_servidor)).into());
+                    self.estado_tela =
+                        Some(TelaDashboard::new(papel, Arc::clone(&self.endereco_servidor)).into());
                 }
             }
         }

@@ -5,8 +5,6 @@ use crate::servicos::PapelUsuario;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
-// O enum `AcaoDashboard` foi removido, pois agora usamos AppEvent.
-
 // Este enum ainda é útil para a sidebar e para a própria tela.
 #[derive(Eq, PartialEq, Hash, Clone, Copy, Debug)]
 pub enum AlvoNavegacao {
@@ -26,7 +24,6 @@ impl TelaDashboard {
         Self { papel_usuario }
     }
 
-    // [CORREÇÃO] A função `update` agora retorna `Option<AppEvent>`.
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         let mut evento_emitido = None;
 
@@ -40,12 +37,46 @@ impl TelaDashboard {
                 .spacing([40.0, 40.0])
                 .striped(false)
                 .show(ui, |ui| {
-                    ui.collapsing("📊 Relatório de OS", |ui| {
-                        ui.label("Em aberto: 5");
-                        ui.label("Para faturar: 2");
-                        ui.label("A realizar: 8");
-                    });
-                    ui.separator();
+                    // Lógica para exibir botões com base no papel do usuário
+                    match self.papel_usuario {
+                        PapelUsuario::Administrador => {
+                            if botao_menu(ui, "💼", "Administrativo").clicked() {
+                                evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
+                            }
+                            if botao_menu(ui, "🔧", "Técnico").clicked() {
+                                evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
+                            }
+                            if botao_menu(ui, "💰", "Financeiro").clicked() {
+                                evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
+                            }
+                            if botao_menu(ui, "📈", "Comercial").clicked() {
+                                evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Comercial));
+                            }
+                            if botao_menu(ui, "📊", "Gerência").clicked() {
+                                evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
+                            }
+                        }
+                        PapelUsuario::Tecnico => {
+                            if botao_menu(ui, "🔧", "Técnico").clicked() {
+                                evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
+                            }
+                        }
+                        PapelUsuario::Financeiro => {
+                            if botao_menu(ui, "💰", "Financeiro").clicked() {
+                                evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
+                            }
+                        }
+                        PapelUsuario::Comercial => {
+                            if botao_menu(ui, "📈", "Comercial").clicked() {
+                                evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Comercial));
+                            }
+                        }
+                        PapelUsuario::Gerencia => {
+                            if botao_menu(ui, "📊", "Gerência").clicked() {
+                                evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
+                            }
+                        }
+                    }
                 });
         });
 
@@ -53,7 +84,6 @@ impl TelaDashboard {
     }
 }
 
-// A função `botao_menu` permanece exatamente a mesma.
 fn botao_menu(ui: &mut egui::Ui, icone: &str, texto: &str) -> egui::Response {
     let tamanho_botao = egui::vec2(160.0, 100.0);
     let (rect, response) = ui.allocate_exact_size(tamanho_botao, egui::Sense::click());
