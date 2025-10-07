@@ -1,17 +1,18 @@
 // src/telas/login.rs
 
 use crate::servicos::{ErroAplicacao, PapelUsuario};
-use eframe::egui::{self, TextureHandle};
+use eframe::egui::{self, Align2, TextureHandle};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
 use std::thread;
+use std::time::Duration;
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum EstadoLogin {
     Ocioso,
     EmProgresso,
     Sucesso(PapelUsuario),
-    Falha(String),
+    Falha { titulo: String, mensagem: String },
 }
 
 #[derive(Deserialize)]
@@ -23,32 +24,39 @@ pub struct TelaLogin {
     nome_usuario: String,
     senha: String,
     estado: Arc<Mutex<EstadoLogin>>,
+    endereco_servidor: Arc<Mutex<String>>,
+    ir_para_configuracao: bool,
 }
 
 impl TelaLogin {
-    pub fn new() -> Self {
+    pub fn new(endereco_servidor: Arc<Mutex<String>>) -> Self {
         Self {
             nome_usuario: String::new(),
             senha: String::new(),
             estado: Arc::new(Mutex::new(EstadoLogin::Ocioso)),
+            endereco_servidor,
+            ir_para_configuracao: false,
+        }
+    }
+
+    pub fn deve_ir_para_configuracao(&mut self) -> bool {
+        if self.ir_para_configuracao {
+            self.ir_para_configuracao = false;
+            true
+        } else {
+            false
         }
     }
 
     pub fn obter_resultado_login(&mut self) -> Option<Result<PapelUsuario, ErroAplicacao>> {
-        let mut estado_guard = self.estado.lock().unwrap();
-        match &*estado_guard {
-            EstadoLogin::Sucesso(papel) => {
-                let resultado = Some(Ok(*papel));
+        if let Ok(mut estado_guard) = self.estado.lock() {
+            if let EstadoLogin::Sucesso(papel) = *estado_guard {
+                let resultado = Some(Ok(papel));
                 *estado_guard = EstadoLogin::Ocioso;
-                resultado
+                return resultado;
             }
-            EstadoLogin::Falha(msg) => {
-                let resultado = Some(Err(ErroAplicacao::Desconhecido(msg.clone())));
-                *estado_guard = EstadoLogin::Ocioso;
-                resultado
-            }
-            _ => None,
         }
+        None
     }
 
     pub fn update(
@@ -59,90 +67,215 @@ impl TelaLogin {
     ) {
         let estado_atual = self.estado.lock().unwrap().clone();
 
-        egui::CentralPanel::default().show(ctx, |ui| {
-            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                ui.add_space(ui.available_height() * 0.1);
-                
-                if let Some(logo_texture) = logo {
-                    ui.add(egui::Image::new(logo_texture).max_size(egui::vec2(280.0, 158.0)));
-                }
+        let is_dark_mode = ctx.style().visuals.dark_mode;
+        let left_panel_color = if is_dark_mode {
+            egui::Color32::from_rgb(20, 25, 40)
+        } else {
+            egui::Color32::from_rgb(30, 80, 180)
+        };
 
-                ui.add_space(20.0);
-                ui.label(egui::RichText::new("Bem-vindo! Faça o login para continuar.").italics().size(16.0));
+        egui::SidePanel::left("painel_branding")
+            .resizable(false)
+            .exact_width(ctx.available_rect().width() / 2.5)
+            .frame(egui::Frame::default().fill(left_panel_color))
+            .show(ctx, |ui| {
+                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                    ui.add_space(ui.available_height() * 0.2);
+                    if let Some(logo_texture) = logo {
+                        ui.add(egui::Image::new(logo_texture).max_size(egui::vec2(280.0, 158.0)));
+                    }
+                    ui.add_space(20.0);
+                    ui.heading(
+                        egui::RichText::new("Senior System")
+                            .color(egui::Color32::WHITE)
+                            .size(32.0)
+                            .strong(),
+                    );
+                    ui.add_space(10.0);
+                    ui.label(
+                        egui::RichText::new("Bem-vindo! Faça o login para continuar.")
+                            .color(egui::Color32::WHITE)
+                            .italics()
+                            .size(16.0),
+                    );
+                });
+            });
+
+        egui::CentralPanel::default().show(ctx, |ui| {
+            // --- CORREÇÃO 1: `Align::End` trocado por `Align::Max` ---
+            ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
+                if ui
+                    .button("⚙")
+                    .on_hover_text("Configurar Servidor")
+                    .clicked()
+                {
+                    self.ir_para_configuracao = true;
+                }
+            });
+
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
+                ui.add_space(ui.available_height() * 0.15);
+                ui.heading(egui::RichText::new("Acesse sua Conta").size(24.0));
                 ui.add_space(30.0);
 
-                ui.add_enabled_ui(!matches!(estado_atual, EstadoLogin::EmProgresso), |ui| {
-                    egui::Frame::new().show(ui, |ui| {
-                        ui.set_max_width(300.0);
-                        ui.label("Usuário:");
-                        ui.text_edit_singleline(&mut self.nome_usuario);
-                        ui.add_space(10.0);
-                        ui.label("Senha:");
-                        ui.add(egui::TextEdit::singleline(&mut self.senha).password(true));
-                        ui.add_space(20.0);
+                let formulario_habilitado = !matches!(estado_atual, EstadoLogin::EmProgresso);
+                ui.add_enabled_ui(formulario_habilitado, |ui| {
+                    // --- CORREÇÃO 2: `Frame::new()` e margens com inteiros ---
+                    egui::Frame::new()
+                        .outer_margin(egui::Margin::symmetric(10, 0))
+                        .show(ui, |ui| {
+                            ui.set_max_width(320.0);
+                            ui.label("Usuário:");
+                            ui.add_space(4.0);
+                            let user_input_response =
+                                ui.text_edit_singleline(&mut self.nome_usuario);
 
-                        ui.horizontal(|ui| {
-                            if ui.button("   Entrar   ").clicked() {
-                                *self.estado.lock().unwrap() = EstadoLogin::EmProgresso;
+                            ui.add_space(15.0);
+                            ui.label("Senha:");
+                            ui.add_space(4.0);
+                            let password_input_response =
+                                ui.add(egui::TextEdit::singleline(&mut self.senha).password(true));
 
-                                let estado_clone = self.estado.clone();
-                                let nome_usuario_clone = self.nome_usuario.clone();
-                                let senha_clone = self.senha.clone();
-                                let ctx_clone = ctx.clone();
-
-                                thread::spawn(move || {
-                                    let client = reqwest::blocking::Client::new();
-                                    let response = client
-                                        .post("http://localhost:3000/login")
-                                        .json(&serde_json::json!({ "usuario": nome_usuario_clone, "senha": senha_clone }))
-                                        .send();
-
-                                    let mut estado = estado_clone.lock().unwrap();
-                                    match response {
-                                        Ok(res) => {
-                                            if res.status().is_success() {
-                                                match res.json::<LoginResponse>() {
-                                                    Ok(login_res) => *estado = EstadoLogin::Sucesso(login_res.papel),
-                                                    Err(e) => *estado = EstadoLogin::Falha(format!("Erro ao processar resposta: {}", e)),
-                                                }
-                                            } else {
-                                                *estado = EstadoLogin::Falha("Usuário ou senha inválidos.".to_string());
-                                            }
-                                        }
-                                        Err(e) => *estado = EstadoLogin::Falha(format!("Erro de conexão com o servidor: {}", e)),
-                                    }
-                                    ctx_clone.request_repaint();
-                                });
+                            if user_input_response.lost_focus()
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                            {
+                                ui.memory_mut(|m| m.request_focus(password_input_response.id));
                             }
 
-                            if ui.button("Cancelar").clicked() {
-                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                            if password_input_response.lost_focus()
+                                && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                            {
+                                self.iniciar_processo_login(ctx);
+                            }
+
+                            ui.add_space(25.0);
+                            ui.horizontal(|ui| {
+                                if ui
+                                    .button(egui::RichText::new("   Entrar   ").size(14.0))
+                                    .clicked()
+                                {
+                                    self.iniciar_processo_login(ctx);
+                                }
+                                if ui
+                                    .button(egui::RichText::new(" Cancelar ").size(14.0))
+                                    .clicked()
+                                {
+                                    ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                                }
+                            });
+                        });
+                });
+
+                if let EstadoLogin::EmProgresso = estado_atual {
+                    ui.add_space(15.0);
+                    ui.horizontal(|ui| {
+                        ui.spinner();
+                        ui.label("Entrando...");
+                    });
+                }
+
+                if let EstadoLogin::Falha {
+                    ref titulo,
+                    ref mensagem,
+                } = estado_atual
+                {
+                    let mut is_open = true;
+                    egui::Window::new(
+                        egui::RichText::new(titulo)
+                            .color(egui::Color32::RED)
+                            .strong(),
+                    )
+                    .open(&mut is_open)
+                    .collapsible(false)
+                    .resizable(false)
+                    .anchor(Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                    .show(ctx, |ui| {
+                        ui.label(mensagem);
+                        ui.add_space(20.0);
+                        ui.horizontal_centered(|ui| {
+                            if ui.button("Fechar").clicked() {
+                                *self.estado.lock().unwrap() = EstadoLogin::Ocioso;
                             }
                         });
                     });
-                });
-                
-                match estado_atual {
-                    EstadoLogin::EmProgresso => {
-                        ui.add_space(10.0);
-                        ui.horizontal(|ui| { ui.spinner(); ui.label("Entrando..."); });
+                    if !is_open {
+                        *self.estado.lock().unwrap() = EstadoLogin::Ocioso;
                     }
-                    EstadoLogin::Falha(msg_erro) => {
-                        ui.add_space(10.0);
-                        ui.label(egui::RichText::new(msg_erro).color(egui::Color32::RED));
-                    }
-                    _ => {}
                 }
-                
+
                 ui.add_space(ui.available_height() - 40.0);
                 ui.separator();
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("© RAG - 2025").color(egui::Color32::GRAY).size(12.0));
+                    ui.label(
+                        egui::RichText::new("© RAG - 2025")
+                            .color(egui::Color32::GRAY)
+                            .size(12.0),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        ui.label(egui::RichText::new(format!("Versão: {}", env!("CARGO_PKG_VERSION"))).color(egui::Color32::GRAY).size(12.0));
+                        ui.label(
+                            egui::RichText::new(format!("Versão: {}", env!("CARGO_PKG_VERSION")))
+                                .color(egui::Color32::GRAY)
+                                .size(12.0),
+                        );
                     });
                 });
             });
+        });
+    }
+
+    fn iniciar_processo_login(&mut self, ctx: &egui::Context) {
+        if self.nome_usuario.is_empty() || self.senha.is_empty() {
+            *self.estado.lock().unwrap() = EstadoLogin::Falha {
+                titulo: "Campos Inválidos".to_string(),
+                mensagem: "Usuário e senha não podem estar vazios.".to_string(),
+            };
+            return;
+        }
+
+        *self.estado.lock().unwrap() = EstadoLogin::EmProgresso;
+
+        let estado_clone = self.estado.clone();
+        let nome_usuario_clone = self.nome_usuario.clone();
+        let senha_clone = self.senha.clone();
+        let ctx_clone = ctx.clone();
+        let endereco_servidor = self.endereco_servidor.lock().unwrap().clone();
+
+        thread::spawn(move || {
+            let url = format!("{}/login", endereco_servidor);
+            let client = reqwest::blocking::Client::new();
+            let response = client
+                .post(&url)
+                .json(&serde_json::json!({ "usuario": nome_usuario_clone, "senha": senha_clone }))
+                .timeout(Duration::from_secs(5))
+                .send();
+
+            let mut estado = estado_clone.lock().unwrap();
+            *estado = match response {
+                Ok(res) => {
+                    if res.status().is_success() {
+                        match res.json::<LoginResponse>() {
+                            Ok(login_res) => EstadoLogin::Sucesso(login_res.papel),
+                            Err(e) => EstadoLogin::Falha {
+                                titulo: "Erro de Resposta".to_string(),
+                                mensagem: format!(
+                                    "Falha ao processar a resposta do servidor: {}",
+                                    e
+                                ),
+                            },
+                        }
+                    } else {
+                        EstadoLogin::Falha {
+                            titulo: "Erro de Autenticação".to_string(),
+                            mensagem: "Usuário ou senha inválidos.".to_string(),
+                        }
+                    }
+                }
+                Err(e) => EstadoLogin::Falha {
+                    titulo: "Erro de Conexão".to_string(),
+                    mensagem: format!("Não foi possível conectar ao servidor em '{}': {}", url, e),
+                },
+            };
+            ctx_clone.request_repaint();
         });
     }
 }

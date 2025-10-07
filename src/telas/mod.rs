@@ -1,5 +1,6 @@
 // src/telas/mod.rs
 pub mod componentes;
+pub mod configuracao;
 pub mod login;
 pub mod painel_adm;
 pub mod painel_comercial;

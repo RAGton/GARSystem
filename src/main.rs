@@ -56,7 +56,7 @@ fn configurar_fontes(ctx: &egui::Context) {
 fn main() -> Result<(), eframe::Error> {
     let opcoes_janela = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([400.0, 500.0])
+            .with_inner_size([850.0, 500.0])
             .with_resizable(true)
             .with_title("Senior System - RAG"),
         centered: true,
