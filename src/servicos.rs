@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize}; // ADICIONE ESTA LINHA
 use thiserror::Error;
 
-// --- ESTRUTURAS DE DADOS ADICIONADAS ---
+
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)] // Adicionado Serialize/Deserialize
 pub enum StatusOS {

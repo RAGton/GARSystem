@@ -121,6 +121,7 @@ impl eframe::App for AplicativoPrincipal {
         let mut proximo_estado: Option<EstadoTela> = None;
         let mut login_sucesso: Option<PapelUsuario> = None;
         let mut deslogar_pedido = false;
+        let mut evento_processado = false;
 
         if let Some(mut estado_atual) = self.estado_tela.take() {
             match &mut estado_atual {
@@ -138,20 +139,20 @@ impl eframe::App for AplicativoPrincipal {
                     tela.update(ctx);
                     if tela.foi_salvo() {
                         *self.endereco_servidor.lock().unwrap() = tela.endereco_servidor.clone();
-                        // Deixa o estado como None para recriar a tela de login
                     }
                 }
                 _ => {
                     if self.papel_usuario_logado.is_some() {
-                        if self.mostrar_ui_principal(ctx, frame, &mut estado_atual) {
-                            deslogar_pedido = true;
-                        }
+                        let (deslogar, evento) =
+                            self.mostrar_ui_principal(ctx, frame, &mut estado_atual);
+                        deslogar_pedido = deslogar;
+                        evento_processado = evento;
                     } else {
                         // O estado será `None`, recriando a tela de login
                     }
                 }
             }
-            if proximo_estado.is_none() && !deslogar_pedido {
+            if proximo_estado.is_none() && !deslogar_pedido && !evento_processado {
                 self.estado_tela = Some(estado_atual);
             }
         }
@@ -186,8 +187,9 @@ impl AplicativoPrincipal {
         ctx: &egui::Context,
         frame: &mut eframe::Frame,
         estado_tela: &mut EstadoTela,
-    ) -> bool {
+    ) -> (bool, bool) {
         let mut deslogar_clicado = false;
+        let mut evento_processado = false;
 
         egui::TopBottomPanel::top("barra_superior").show(ctx, |ui| {
             ui.horizontal(|ui| {
@@ -223,6 +225,7 @@ impl AplicativoPrincipal {
         if let Some(evento) = sidebar::mostrar(ctx, papel, self.sidebar_aberto, self.logo.as_ref())
         {
             self.processar_evento(evento);
+            evento_processado = true;
         }
 
         let mut evento_emitido: Option<AppEvent> = None;
@@ -241,9 +244,10 @@ impl AplicativoPrincipal {
 
         if let Some(evento) = evento_emitido {
             self.processar_evento(evento);
+            evento_processado = true;
         }
 
-        deslogar_clicado
+        (deslogar_clicado, evento_processado)
     }
 
     fn processar_evento(&mut self, evento: AppEvent) {
