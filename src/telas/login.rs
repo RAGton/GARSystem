@@ -108,13 +108,7 @@ impl TelaLogin {
                         ui.add(egui::Image::new(logo_texture).max_size(egui::vec2(280.0, 158.0)));
                     }
                     ui.add_space(20.0);
-                    ui.heading(
-                        egui::RichText::new("Senior System")
-                            .color(egui::Color32::WHITE)
-                            .size(32.0)
-                            .strong(),
-                    );
-                    ui.add_space(10.0);
+                    ui.add_space(20.0);
                     ui.label(
                         egui::RichText::new("Bem-vindo! Faça o login para continuar.")
                             .color(egui::Color32::WHITE)
