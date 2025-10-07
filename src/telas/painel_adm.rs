@@ -49,7 +49,7 @@ pub struct TelaAdmin {
 }
 
 impl TelaAdmin {
-    pub fn new() -> Self {
+    pub fn new(endereco_servidor: Arc<Mutex<String>>) -> Self {
         let estado_carregamento = Arc::new(Mutex::new(EstadoCarregamento::Carregando));
         let estado_clone = estado_carregamento.clone();
         let ctx_clone = eframe::egui::Context::default(); // Precisamos de um contexto para redesenhar
@@ -57,7 +57,8 @@ impl TelaAdmin {
         // [NOVO] Inicia uma thread para buscar os usuários da API assim que a tela é criada.
         thread::spawn(move || {
             let client = reqwest::blocking::Client::new();
-            let response = client.get("http://localhost:3000/usuarios").send();
+            let endereco = endereco_servidor.lock().unwrap().clone();
+            let response = client.get(format!("{}/usuarios", endereco)).send();
 
             let mut estado = estado_clone.lock().unwrap();
             match response {

@@ -2,6 +2,7 @@
 
 use crate::aplicacao::{AppEvent, TelaAtiva};
 use eframe::egui;
+use std::sync::{Arc, Mutex};
 
 // A struct que guarda o estado da tela de edição.
 pub struct TelaOsEdicao {
@@ -13,7 +14,7 @@ pub struct TelaOsEdicao {
 
 impl TelaOsEdicao {
     // O construtor recebe o ID da OS que precisa ser editada.
-    pub fn new(os_id: u32) -> Self {
+    pub fn new(os_id: u32, _endereco_servidor: Arc<Mutex<String>>) -> Self {
         // Aqui seria o local ideal para iniciar uma carga assíncrona dos dados da OS do banco.
         // Por enquanto, apenas exibimos o ID.
         println!("Iniciando tela de edição para a OS de ID: {}", os_id);

@@ -3,6 +3,7 @@
 use crate::aplicacao::AppEvent;
 use crate::servicos::{OrdemServico, StatusOS};
 use eframe::egui;
+use std::sync::{Arc, Mutex};
 
 // O enum `AcaoTecnico` foi removido.
 
@@ -13,7 +14,7 @@ pub struct TelaTecnico {
 }
 
 impl TelaTecnico {
-    pub fn new() -> Self {
+    pub fn new(_endereco_servidor: Arc<Mutex<String>>) -> Self {
         // Dados de exemplo para popular a tela.
         let ordens_mock = vec![
             OrdemServico {

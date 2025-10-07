@@ -73,7 +73,7 @@ fn main() -> Result<(), eframe::Error> {
             configurar_fontes(&cc.egui_ctx);
 
             // Chamamos `AplicativoPrincipal::new()` sem argumentos.
-            Ok(Box::new(AplicativoPrincipal::new()))
+            Ok(Box::new(AplicativoPrincipal::new(cc)))
         }),
     )
 }

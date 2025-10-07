@@ -1,63 +1,87 @@
 // src/telas/componentes/sidebar.rs
 
-// REMOVA qualquer definição local de `AppEvent`
-// IMPORTE o AppEvent central
 use crate::aplicacao::{AppEvent, TelaAtiva};
 use crate::servicos::PapelUsuario;
+use crate::telas::painel_principal::AlvoNavegacao;
 use eframe::egui::{self, ColorImage, TextureHandle};
-use std::path::Path;
+use std::collections::HashSet;
 
+// A função agora é pública para ser chamada pelo `aplicacao.rs`
 pub fn carregar_logo() -> Result<ColorImage, image::ImageError> {
-    let caminho_logo = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("assets")
-        .join("logo.png");
-    let imagem = image::io::Reader::open(caminho_logo)?.decode()?;
+    let caminho = std::path::Path::new("./assets/logo.png");
+    let imagem = image::io::Reader::open(caminho)?.decode()?;
     let tamanho = [imagem.width() as _, imagem.height() as _];
-    let pixels_rgba = imagem.to_rgba8().into_raw();
-    Ok(ColorImage::from_rgba_unmultiplied(tamanho, &pixels_rgba))
+    let buffer_imagem = imagem.to_rgba8();
+    let pixels = buffer_imagem.as_flat_samples();
+    Ok(ColorImage::from_rgba_unmultiplied(
+        tamanho,
+        pixels.as_slice(),
+    ))
 }
 
-// A função `mostrar` agora retorna `Option<AppEvent>`
 pub fn mostrar(
     ctx: &egui::Context,
-    papel: PapelUsuario,
-    aberto: bool,
-    logo: Option<&TextureHandle>,
+    papel_usuario: PapelUsuario,
+    sidebar_aberto: bool,
+    logo: Option<&TextureHandle>, // Recebe a textura já carregada
 ) -> Option<AppEvent> {
-    if !aberto {
-        return None;
+    let mut evento_emitido: Option<AppEvent> = None;
+
+    let mut permissoes: HashSet<AlvoNavegacao> = HashSet::new();
+    use PapelUsuario::*;
+    match papel_usuario {
+        Administrador => {
+            permissoes.extend([
+                AlvoNavegacao::Admin,
+                AlvoNavegacao::Tecnico,
+                AlvoNavegacao::Financeiro,
+                AlvoNavegacao::Comercial,
+                AlvoNavegacao::Gerencia,
+            ]);
+        }
+        Tecnico => {
+            permissoes.insert(AlvoNavegacao::Tecnico);
+        }
+        _ => {}
     }
 
-    let mut proximo_evento: Option<AppEvent> = None;
-
     egui::SidePanel::left("sidebar")
+        .resizable(true)
         .default_width(200.0)
-        .show(ctx, |ui| {
-            ui.with_layout(
-                egui::Layout::top_down_justified(egui::Align::Center),
-                |ui| {
-                    if let Some(logo_texture) = logo {
-                        ui.image(logo_texture);
-                    } else {
-                        ui.heading("Senior System");
-                    }
-                },
-            );
+        .show_animated(ctx, sidebar_aberto, |ui| {
+            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+                ui.add_space(10.0);
+                if let Some(logo_texture) = logo {
+                    ui.add(egui::Image::new(logo_texture).max_width(180.0));
+                }
+                ui.add_space(10.0);
+                ui.separator();
 
-            ui.separator();
+                ui.label("Navegação");
 
-            ui.with_layout(egui::Layout::top_down_justified(egui::Align::Min), |ui| {
-                if ui.button("Dashboard").clicked() {
-                    proximo_evento = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
+                if ui.add(egui::Button::new("🏠 Dashboard")).clicked() {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
                 }
-                if ui.button("Admin").clicked() {
-                    proximo_evento = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
+                if permissoes.contains(&AlvoNavegacao::Admin)
+                    && ui.add(egui::Button::new("⚙️ Admin")).clicked()
+                {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
                 }
-                if ui.button("Técnico").clicked() {
-                    proximo_evento = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
+                if permissoes.contains(&AlvoNavegacao::Tecnico)
+                    && ui.add(egui::Button::new("🔧 Técnico")).clicked()
+                {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
                 }
+            });
+
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+                ui.label(
+                    egui::RichText::new(format!("Versão: {}", env!("CARGO_PKG_VERSION")))
+                        .color(egui::Color32::GRAY)
+                        .size(12.0),
+                );
             });
         });
 
-    proximo_evento
+    evento_emitido
 }
