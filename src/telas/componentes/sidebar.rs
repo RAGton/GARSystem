@@ -9,7 +9,7 @@ use std::collections::HashSet;
 // A função agora é pública para ser chamada pelo `aplicacao.rs`
 pub fn carregar_logo() -> Result<ColorImage, image::ImageError> {
     let caminho = std::path::Path::new("./assets/logo.png");
-    let imagem = image::io::Reader::open(caminho)?.decode()?;
+    let imagem = image::ImageReader::open(caminho)?.decode()?;
     let tamanho = [imagem.width() as _, imagem.height() as _];
     let buffer_imagem = imagem.to_rgba8();
     let pixels = buffer_imagem.as_flat_samples();
@@ -37,6 +37,7 @@ pub fn mostrar(
                 AlvoNavegacao::Financeiro,
                 AlvoNavegacao::Comercial,
                 AlvoNavegacao::Gerencia,
+                AlvoNavegacao::Estoque,
             ]);
         }
         Tecnico => {
@@ -50,6 +51,9 @@ pub fn mostrar(
         }
         Gerencia => {
             permissoes.insert(AlvoNavegacao::Gerencia);
+        }
+        Estoquista => {
+            permissoes.insert(AlvoNavegacao::Estoque);
         }
     }
 
@@ -94,6 +98,20 @@ pub fn mostrar(
                     && ui.add(egui::Button::new("📊 Gerência")).clicked()
                 {
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
+                }
+                // Ordens de Serviço: disponível para Admin, Comercial e Técnico
+                if permissoes.contains(&AlvoNavegacao::Admin)
+                    || permissoes.contains(&AlvoNavegacao::Comercial)
+                    || permissoes.contains(&AlvoNavegacao::Tecnico)
+                {
+                    if ui.add(egui::Button::new("📝 Ordens de Serviço")).clicked() {
+                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Ordens));
+                    }
+                }
+                if permissoes.contains(&AlvoNavegacao::Estoque)
+                    && ui.add(egui::Button::new("📦 Estoque")).clicked()
+                {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Estoque));
                 }
             });
 

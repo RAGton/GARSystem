@@ -1,10 +1,9 @@
 // src/telas/painel_adm.rs
 
 use crate::aplicacao::AppEvent;
+use crate::servicos::{InfoUsuario, PapelUsuario};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
-use std::thread;
-use SeniorSystem::servicos::{InfoUsuario, PapelUsuario}; // Importa da biblioteca partilhada
 
 // Enum para controlar o estado do carregamento assíncrono da lista de utilizadores.
 // Isto permite que a interface gráfica continue a responder enquanto os dados são
@@ -84,10 +83,11 @@ impl TelaAdmin {
 
         // `thread::spawn` é como fazer um `fork()` em sistemas Linux, criando um
         // novo processo de execução que não bloqueia a interface gráfica.
-        thread::spawn(move || {
+        // Use o executor compartilhado e o client singleton para melhor performance.
+        crate::executor::spawn(move || {
             let endereco = endereco_clone.lock().unwrap();
             let url = format!("{}/usuarios", *endereco);
-            let client = reqwest::blocking::Client::new();
+            let client = crate::http_client::get_client();
 
             // Atualiza o estado para "Carregando" antes de fazer o pedido.
             *estado_clone.lock().unwrap() = EstadoCarregamento::Carregando;
@@ -177,7 +177,7 @@ impl TelaAdmin {
             });
             ui.horizontal(|ui| {
                 ui.label("Papel:    ");
-                egui::ComboBox::from_id_source("combo_papel")
+                egui::ComboBox::from_id_salt("combo_papel")
                     .selected_text(format!("{:?}", self.formulario.papel_selecionado))
                     .show_ui(ui, |ui| {
                         for papel in PapelUsuario::iter() {
@@ -264,10 +264,10 @@ impl TelaAdmin {
 
         let form_clone = Arc::new(Mutex::new(std::mem::take(&mut self.formulario)));
 
-        thread::spawn(move || {
+        crate::executor::spawn(move || {
             let endereco = endereco_clone.lock().unwrap();
             let url = format!("{}/usuarios", *endereco);
-            let client = reqwest::blocking::Client::new();
+            let client = crate::http_client::get_client();
 
             let mut form_guard = form_clone.lock().unwrap();
 

@@ -3,8 +3,9 @@
 use crate::servicos::PapelUsuario;
 use crate::telas::{
     componentes::sidebar, configuracao::TelaConfiguracao, login::TelaLogin, painel_adm::TelaAdmin,
-    painel_comercial::TelaComercial, painel_financeiro::TelaFinanceiro,
-    painel_gerencia::TelaGerencia, painel_os_edicao::TelaOsEdicao, painel_principal::TelaDashboard,
+    painel_comercial::TelaComercial, painel_estoque::TelaEstoque,
+    painel_financeiro::TelaFinanceiro, painel_gerencia::TelaGerencia, painel_ordens::TelaOrdens,
+    painel_os_criar::TelaCriarOs, painel_os_edicao::TelaOsEdicao, painel_principal::TelaDashboard,
     painel_tecnico::TelaTecnico,
 };
 use eframe::egui::{self, ColorImage, TextureHandle};
@@ -22,11 +23,14 @@ pub enum EstadoTela {
     Configuracao(TelaConfiguracao),
     Dashboard(TelaDashboard),
     Admin(TelaAdmin),
+    CriarOs(TelaCriarOs),
     Tecnico(TelaTecnico),
+    Ordens(TelaOrdens),
     OsEdicao(TelaOsEdicao),
     Financeiro(TelaFinanceiro),
     Comercial(TelaComercial),
     Gerencia(TelaGerencia),
+    Estoque(TelaEstoque),
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -40,9 +44,12 @@ pub enum TelaAtiva {
     Dashboard,
     Admin,
     Tecnico,
+    CriarOs,
     Financeiro,
     Comercial,
     Gerencia,
+    Ordens,
+    Estoque,
 }
 
 pub struct AplicativoPrincipal {
@@ -153,14 +160,18 @@ impl eframe::App for AplicativoPrincipal {
                     }
                     if tela.deve_voltar() {
                         proximo_estado = Some(
-                            TelaLogin::new(Arc::clone(&self.endereco_servidor), String::new(), false)
-                                .into(),
+                            TelaLogin::new(
+                                Arc::clone(&self.endereco_servidor),
+                                String::new(),
+                                false,
+                            )
+                            .into(),
                         );
                     }
                 }
                 _ => {
                     if self.papel_usuario_logado.is_some() {
-                        let (deslogar, evento) = 
+                        let (deslogar, evento) =
                             self.mostrar_ui_principal(ctx, frame, &mut estado_atual);
                         deslogar_pedido = deslogar;
                         evento_processado = evento;
@@ -250,10 +261,13 @@ impl AplicativoPrincipal {
                 EstadoTela::Dashboard(tela) => tela.update(ctx, frame),
                 EstadoTela::Admin(tela) => tela.update(ctx, frame),
                 EstadoTela::Tecnico(tela) => tela.update(ctx, frame),
+                EstadoTela::CriarOs(tela) => tela.update(ctx, frame),
+                EstadoTela::Ordens(tela) => tela.update(ctx, frame),
                 EstadoTela::OsEdicao(tela) => tela.update(ctx, frame),
                 EstadoTela::Financeiro(tela) => tela.update(ctx, frame),
                 EstadoTela::Comercial(tela) => tela.update(ctx, frame),
                 EstadoTela::Gerencia(tela) => tela.update(ctx, frame),
+                EstadoTela::Estoque(tela) => tela.update(ctx, frame),
                 _ => None,
             };
         });
@@ -281,9 +295,16 @@ impl AplicativoPrincipal {
                         TelaAtiva::Tecnico => {
                             TelaTecnico::new(Arc::clone(&self.endereco_servidor)).into()
                         }
+                        TelaAtiva::Ordens => {
+                            TelaOrdens::new(papel, Arc::clone(&self.endereco_servidor)).into()
+                        }
+                        TelaAtiva::CriarOs => {
+                            TelaCriarOs::new(Arc::clone(&self.endereco_servidor)).into()
+                        }
                         TelaAtiva::Financeiro => TelaFinanceiro::new().into(),
                         TelaAtiva::Comercial => TelaComercial::new().into(),
                         TelaAtiva::Gerencia => TelaGerencia::new().into(),
+                        TelaAtiva::Estoque => TelaEstoque::new().into(),
                     };
                     self.estado_tela = Some(novo_estado);
                 }
@@ -342,6 +363,18 @@ impl From<TelaOsEdicao> for EstadoTela {
     }
 }
 
+impl From<TelaCriarOs> for EstadoTela {
+    fn from(t: TelaCriarOs) -> Self {
+        Self::CriarOs(t)
+    }
+}
+
+impl From<TelaOrdens> for EstadoTela {
+    fn from(t: TelaOrdens) -> Self {
+        Self::Ordens(t)
+    }
+}
+
 impl From<TelaFinanceiro> for EstadoTela {
     fn from(t: TelaFinanceiro) -> Self {
         Self::Financeiro(t)
@@ -357,5 +390,11 @@ impl From<TelaComercial> for EstadoTela {
 impl From<TelaGerencia> for EstadoTela {
     fn from(t: TelaGerencia) -> Self {
         Self::Gerencia(t)
+    }
+}
+
+impl From<TelaEstoque> for EstadoTela {
+    fn from(t: TelaEstoque) -> Self {
+        Self::Estoque(t)
     }
 }

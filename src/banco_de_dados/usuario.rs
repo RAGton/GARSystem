@@ -29,6 +29,7 @@ pub fn verificar_senha_e_obter_papel(
                     "Tecnico" => Ok(PapelUsuario::Tecnico),
                     "Financeiro" => Ok(PapelUsuario::Financeiro),
                     "Comercial" => Ok(PapelUsuario::Comercial),
+                    "Estoquista" => Ok(PapelUsuario::Estoquista),
                     _ => Err(ErroAplicacao::Desconhecido(
                         "Papel de usuário inválido.".into(),
                     )),
@@ -59,6 +60,7 @@ pub fn criar_usuario(
         PapelUsuario::Tecnico => "Tecnico",
         PapelUsuario::Financeiro => "Financeiro",
         PapelUsuario::Comercial => "Comercial",
+        PapelUsuario::Estoquista => "Estoquista",
     };
 
     conn.exec_drop(

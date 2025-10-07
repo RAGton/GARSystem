@@ -1,6 +1,6 @@
 // src/telas/painel_principal.rs
 
-use crate::aplicacao::{AppEvent, TelaAtiva};
+use crate::aplicacao::AppEvent;
 use crate::servicos::PapelUsuario;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
@@ -15,6 +15,7 @@ pub enum AlvoNavegacao {
     Financeiro,
     Comercial,
     Gerencia,
+    Estoque,
 }
 
 pub struct TelaDashboard {

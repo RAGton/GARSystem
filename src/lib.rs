@@ -4,4 +4,6 @@
 // fazem parte desta biblioteca e podem ser usados por
 // outros programas (como a GUI e o Servidor).
 pub mod banco_de_dados;
+pub mod executor;
+pub mod http_client;
 pub mod servicos;

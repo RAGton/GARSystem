@@ -4,7 +4,6 @@ use crate::servicos::{ErroAplicacao, PapelUsuario};
 use eframe::egui::{self, Align2, Color32, TextureHandle};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
-use std::thread;
 use std::time::Duration;
 
 #[derive(Debug, PartialEq, Clone)]
@@ -23,7 +22,7 @@ struct LoginResponse {
 pub struct TelaLogin {
     nome_usuario: String,
     senha: String,
-    lembrar_usuario: bool, 
+    lembrar_usuario: bool,
     estado: Arc<Mutex<EstadoLogin>>,
     endereco_servidor: Arc<Mutex<String>>,
     ir_para_configuracao: bool,
@@ -119,7 +118,7 @@ impl TelaLogin {
             });
 
         egui::CentralPanel::default()
-            .frame(egui::Frame::none())
+            .frame(egui::Frame::NONE)
             .show(ctx, |ui| {
                 ui.painter()
                     .rect_filled(ui.clip_rect(), 0.0, ui.visuals().panel_fill);
@@ -317,9 +316,10 @@ impl TelaLogin {
         let ctx_clone = ctx.clone();
         let endereco_servidor = self.endereco_servidor.lock().unwrap().clone();
 
-        thread::spawn(move || {
+        // Use o executor compartilhado para evitar spawn ilimitado de threads.
+        crate::executor::spawn(move || {
             let url = format!("{}/login", endereco_servidor);
-            let client = reqwest::blocking::Client::new();
+            let client = crate::http_client::get_client();
             let response = client
                 .post(&url)
                 .json(&serde_json::json!({ "usuario": nome_usuario_clone, "senha": senha_clone }))

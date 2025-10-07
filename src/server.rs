@@ -27,7 +27,12 @@ struct LoginResponse {
 
 #[tokio::main]
 async fn main() {
+    // Inicializa serviços e o pool de conexões com o banco de dados.
     servicos::inicializar();
+    if let Err(e) = banco_de_dados::conexao::inicializar_pool() {
+        eprintln!("Falha ao inicializar pool do banco de dados: {:?}", e);
+        std::process::exit(1);
+    }
 
     let cors = CorsLayer::new().allow_origin(Any);
 

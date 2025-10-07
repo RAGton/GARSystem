@@ -3,6 +3,8 @@
 
 mod aplicacao;
 mod banco_de_dados;
+mod executor;
+mod http_client;
 mod servicos;
 mod telas;
 use aplicacao::AplicativoPrincipal;
