@@ -25,6 +25,8 @@ pub struct TelaConfiguracao {
     estado_scanner: Arc<Mutex<EstadoScanner>>,
     /// Indica se o usuário salvou a configuração.
     salvo: bool,
+    /// Indica se o usuário quer voltar para a tela de login.
+    voltar: bool,
 }
 
 impl TelaConfiguracao {
@@ -33,6 +35,7 @@ impl TelaConfiguracao {
             endereco_servidor: endereco_atual.to_string(),
             estado_scanner: Arc::new(Mutex::new(EstadoScanner::Ocioso)),
             salvo: false,
+            voltar: false,
         }
     }
 
@@ -44,6 +47,11 @@ impl TelaConfiguracao {
         } else {
             false
         }
+    }
+
+    /// Retorna `true` se o usuário quer voltar para a tela de login.
+    pub fn deve_voltar(&self) -> bool {
+        self.voltar
     }
 
     pub fn update(&mut self, ctx: &egui::Context) {
@@ -136,6 +144,7 @@ impl TelaConfiguracao {
                 ui.add_space(30.0);
                 if ui.button("   Salvar e Voltar   ").clicked() {
                     self.salvo = true;
+                    self.voltar = true;
                 }
             });
         });

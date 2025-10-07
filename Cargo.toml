@@ -24,6 +24,7 @@ path = "src/server.rs"
 eframe = "0.32.3"
 image = { version = "0.25", features = ["png"] }
 reqwest = { version = "0.12", features = ["json", "blocking"] }
+egui_plot = "0.27.2"
 
 # --- Dependências para o Servidor (Backend) ---
 # Usamos Axum, o framework web moderno que integra com Tokio
@@ -42,4 +43,3 @@ dotenvy = "0.15"
 # Versão fixada para estabilidade
 mysql = "25.0"
 bcrypt = "0.15"
-

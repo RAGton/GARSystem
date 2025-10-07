@@ -23,7 +23,7 @@ struct LoginResponse {
 pub struct TelaLogin {
     nome_usuario: String,
     senha: String,
-    lembrar_usuario: bool, // Adicionado
+    lembrar_usuario: bool, 
     estado: Arc<Mutex<EstadoLogin>>,
     endereco_servidor: Arc<Mutex<String>>,
     ir_para_configuracao: bool,

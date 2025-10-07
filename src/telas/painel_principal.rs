@@ -28,57 +28,15 @@ impl TelaDashboard {
 
     // [CORREÇÃO] A função `update` agora retorna `Option<AppEvent>`.
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
-        let mut evento_emitido = None;
+        let evento_emitido = None;
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Menu Principal");
-            ui.label("Selecione uma opção para começar.");
+            ui.heading("Dashboard");
+            ui.label("Relatórios e gráficos da empresa.");
             ui.separator();
 
-            egui::Grid::new("grid_menu")
-                .num_columns(3)
-                .spacing([40.0, 40.0])
-                .striped(false)
-                .show(ui, |ui| {
-                    if self.papel_usuario == PapelUsuario::Administrador {
-                        if botao_menu(ui, "👤", "Gerenciar Usuários").clicked() {
-                            // [CORREÇÃO] Emite um evento de navegação.
-                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
-                        }
-                    }
-                    if matches!(
-                        self.papel_usuario,
-                        PapelUsuario::Administrador | PapelUsuario::Tecnico
-                    ) {
-                        if botao_menu(ui, "🔧", "Ordens de Serviço").clicked() {
-                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
-                        }
-                    }
-                    if matches!(
-                        self.papel_usuario,
-                        PapelUsuario::Administrador | PapelUsuario::Comercial
-                    ) {
-                        if botao_menu(ui, "🛒", "Comercial").clicked() {
-                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Comercial));
-                        }
-                    }
-                    if matches!(
-                        self.papel_usuario,
-                        PapelUsuario::Administrador | PapelUsuario::Financeiro
-                    ) {
-                        if botao_menu(ui, "💳", "Financeiro").clicked() {
-                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
-                        }
-                    }
-                    if matches!(
-                        self.papel_usuario,
-                        PapelUsuario::Administrador | PapelUsuario::Gerencia
-                    ) {
-                        if botao_menu(ui, "📈", "Gerência").clicked() {
-                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
-                        }
-                    }
-                });
+            // TODO: Adicionar gráficos aqui
+            ui.label("Gráficos em breve...");
         });
 
         evento_emitido

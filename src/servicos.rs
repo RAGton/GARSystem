@@ -97,3 +97,7 @@ pub fn listar_usuarios() -> Vec<InfoUsuario> {
 pub fn remover_usuario(u: &str) -> Result<(), ErroAplicacao> {
     crate::banco_de_dados::remover_usuario(u)
 }
+
+pub fn listar_ordens_servico() -> Result<Vec<OrdemServico>, ErroAplicacao> {
+    crate::banco_de_dados::listar_ordens_servico()
+}

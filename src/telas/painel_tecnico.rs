@@ -15,47 +15,16 @@ pub struct TelaTecnico {
 
 impl TelaTecnico {
     pub fn new(_endereco_servidor: Arc<Mutex<String>>) -> Self {
-        // Dados de exemplo para popular a tela.
-        let ordens_mock = vec![
-            OrdemServico {
-                id: 101,
-                cliente: "Ana Silva".into(),
-                equipamento: "Notebook Dell Vostro".into(),
-                defeito_relatado: "Não liga, sem sinal de LED.".into(),
-                status: StatusOS::Aberta,
-            },
-            OrdemServico {
-                id: 102,
-                cliente: "Bruno Costa".into(),
-                equipamento: "PC Gamer".into(),
-                defeito_relatado: "Tela azul ao iniciar jogos pesados.".into(),
-                status: StatusOS::EmAndamento,
-            },
-            OrdemServico {
-                id: 103,
-                cliente: "Carla Dias".into(),
-                equipamento: "Impressora HP".into(),
-                defeito_relatado: "Atolando papel constantemente.".into(),
-                status: StatusOS::AguardandoPeca,
-            },
-            OrdemServico {
-                id: 104,
-                cliente: "Daniel Farias".into(),
-                equipamento: "Macbook Pro 2019".into(),
-                defeito_relatado: "Teclado com falha em algumas teclas.".into(),
-                status: StatusOS::Finalizada,
-            },
-            OrdemServico {
-                id: 105,
-                cliente: "Empresa XYZ".into(),
-                equipamento: "Servidor Rack".into(),
-                defeito_relatado: "Fonte redundante queimou.".into(),
-                status: StatusOS::Cancelada,
-            },
-        ];
+        let ordens = match crate::servicos::listar_ordens_servico() {
+            Ok(ordens) => ordens,
+            Err(e) => {
+                eprintln!("Erro ao carregar ordens de serviço: {}", e);
+                vec![]
+            }
+        };
 
         Self {
-            ordens: ordens_mock,
+            ordens,
             ordem_selecionada: None,
             filtro_busca: String::new(),
         }

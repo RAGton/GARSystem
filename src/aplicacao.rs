@@ -70,11 +70,16 @@ fn definir_estilo_azul(ctx: &egui::Context, tema: Tema) {
 
 impl AplicativoPrincipal {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
-        let endereco_servidor = Arc::new(Mutex::new("http://localhost:3000".to_string()));
-
+        let mut endereco_servidor_str = "http://localhost:3000".to_string();
         let mut nome_usuario = String::new();
         let mut lembrar_usuario = false;
+
         if let Some(storage) = cc.storage {
+            if let Some(addr) = storage.get_string("endereco_servidor") {
+                if !addr.is_empty() {
+                    endereco_servidor_str = addr;
+                }
+            }
             if let Some(lembrar) = storage.get_string("lembrar_usuario") {
                 if let Ok(val) = lembrar.parse::<bool>() {
                     lembrar_usuario = val;
@@ -86,6 +91,8 @@ impl AplicativoPrincipal {
                 }
             }
         }
+
+        let endereco_servidor = Arc::new(Mutex::new(endereco_servidor_str));
 
         let estado_tela = Some(EstadoTela::Login(TelaLogin::new(
             Arc::clone(&endereco_servidor),
@@ -138,12 +145,22 @@ impl eframe::App for AplicativoPrincipal {
                 EstadoTela::Configuracao(tela) => {
                     tela.update(ctx);
                     if tela.foi_salvo() {
-                        *self.endereco_servidor.lock().unwrap() = tela.endereco_servidor.clone();
+                        let nova_url = tela.endereco_servidor.clone();
+                        *self.endereco_servidor.lock().unwrap() = nova_url.clone();
+                        if let Some(storage) = frame.storage_mut() {
+                            storage.set_string("endereco_servidor", nova_url);
+                        }
+                    }
+                    if tela.deve_voltar() {
+                        proximo_estado = Some(
+                            TelaLogin::new(Arc::clone(&self.endereco_servidor), String::new(), false)
+                                .into(),
+                        );
                     }
                 }
                 _ => {
                     if self.papel_usuario_logado.is_some() {
-                        let (deslogar, evento) =
+                        let (deslogar, evento) = 
                             self.mostrar_ui_principal(ctx, frame, &mut estado_atual);
                         deslogar_pedido = deslogar;
                         evento_processado = evento;
@@ -180,7 +197,6 @@ impl eframe::App for AplicativoPrincipal {
         }
     }
 }
-
 impl AplicativoPrincipal {
     fn mostrar_ui_principal(
         &mut self,
