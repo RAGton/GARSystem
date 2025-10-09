@@ -124,6 +124,25 @@ CREATE TABLE IF NOT EXISTS ordem_servico_pecas (
     FOREIGN KEY (peca_id) REFERENCES pecas(id)
 );
 
+-- Tabelas para Orçamentos
+CREATE TABLE IF NOT EXISTS orcamentos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    cliente_id INT NOT NULL,
+    total DECIMAL(12,2) NOT NULL DEFAULT 0.00,
+    data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+);
+
+CREATE TABLE IF NOT EXISTS orcamento_items (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    orcamento_id INT NOT NULL,
+    descricao VARCHAR(255) NOT NULL,
+    quantidade INT NOT NULL,
+    preco_unitario DECIMAL(12,2) NOT NULL,
+    preco_total DECIMAL(12,2) NOT NULL,
+    FOREIGN KEY (orcamento_id) REFERENCES orcamentos(id) ON DELETE CASCADE
+);
+
 -- Tabela para rastrear TODAS as movimentações de estoque (AUDITORIA)
 CREATE TABLE IF NOT EXISTS movimentos_estoque (
     id INT AUTO_INCREMENT PRIMARY KEY,

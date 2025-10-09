@@ -6,7 +6,6 @@ use crate::telas::painel_principal::AlvoNavegacao;
 use eframe::egui::{self, ColorImage, TextureHandle};
 use std::collections::HashSet;
 
-// A função agora é pública para ser chamada pelo `aplicacao.rs`
 pub fn carregar_logo() -> Result<ColorImage, image::ImageError> {
     let caminho = std::path::Path::new("./assets/logo.png");
     let imagem = image::ImageReader::open(caminho)?.decode()?;
@@ -19,15 +18,8 @@ pub fn carregar_logo() -> Result<ColorImage, image::ImageError> {
     ))
 }
 
-pub fn mostrar(
-    ctx: &egui::Context,
-    papel_usuario: PapelUsuario,
-    sidebar_aberto: bool,
-    logo: Option<&TextureHandle>, // Recebe a textura já carregada
-) -> Option<AppEvent> {
-    let mut evento_emitido: Option<AppEvent> = None;
-
-    let mut permissoes: HashSet<AlvoNavegacao> = HashSet::new();
+fn montar_permissoes(papel_usuario: PapelUsuario) -> HashSet<AlvoNavegacao> {
+    let mut permissoes = HashSet::new();
     use PapelUsuario::*;
     match papel_usuario {
         Administrador => {
@@ -56,6 +48,18 @@ pub fn mostrar(
             permissoes.insert(AlvoNavegacao::Estoque);
         }
     }
+    permissoes
+}
+
+pub fn mostrar(
+    ctx: &egui::Context,
+    papel_usuario: PapelUsuario,
+    sidebar_aberto: bool,
+    logo: Option<&TextureHandle>,
+) -> Option<AppEvent> {
+    let mut evento_emitido: Option<AppEvent> = None;
+
+    let permissoes = montar_permissoes(papel_usuario);
 
     egui::SidePanel::left("sidebar")
         .resizable(true)
@@ -71,34 +75,22 @@ pub fn mostrar(
 
                 ui.label("Navegação");
 
-                if ui.add(egui::Button::new("🏠 Dashboard")).clicked() {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
+                // Dashboard: somente para papéis com acesso (Admin, Gerencia, Comercial)
+                if matches!(
+                    papel_usuario,
+                    PapelUsuario::Administrador | PapelUsuario::Gerencia | PapelUsuario::Comercial
+                ) {
+                    if ui.add(egui::Button::new("🏠 Dashboard")).clicked() {
+                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
+                    }
                 }
+
                 if permissoes.contains(&AlvoNavegacao::Admin)
                     && ui.add(egui::Button::new("💼 Administrativo")).clicked()
                 {
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
                 }
-                if permissoes.contains(&AlvoNavegacao::Tecnico)
-                    && ui.add(egui::Button::new("🔧 Técnico")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
-                }
-                if permissoes.contains(&AlvoNavegacao::Financeiro)
-                    && ui.add(egui::Button::new("💰 Financeiro")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
-                }
-                if permissoes.contains(&AlvoNavegacao::Comercial)
-                    && ui.add(egui::Button::new("📈 Comercial")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Comercial));
-                }
-                if permissoes.contains(&AlvoNavegacao::Gerencia)
-                    && ui.add(egui::Button::new("📊 Gerência")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
-                }
+
                 // Ordens de Serviço: disponível para Admin, Comercial e Técnico
                 if permissoes.contains(&AlvoNavegacao::Admin)
                     || permissoes.contains(&AlvoNavegacao::Comercial)
@@ -108,11 +100,74 @@ pub fn mostrar(
                         evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Ordens));
                     }
                 }
+
+                if permissoes.contains(&AlvoNavegacao::Financeiro)
+                    && ui.add(egui::Button::new("💰 Financeiro")).clicked()
+                {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
+                }
+                if permissoes.contains(&AlvoNavegacao::Comercial)
+                    && ui.add(egui::Button::new("📈 Orçamentos")).clicked()
+                {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Orcamentos));
+                }
+                if permissoes.contains(&AlvoNavegacao::Gerencia)
+                    && ui.add(egui::Button::new("📊 Gerência")).clicked()
+                {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
+                }
                 if permissoes.contains(&AlvoNavegacao::Estoque)
                     && ui.add(egui::Button::new("📦 Estoque")).clicked()
                 {
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Estoque));
                 }
+
+                // Clientes: acessível a todos os usuários
+                if ui.add(egui::Button::new("👥 Clientes")).clicked() {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Clientes));
+                }
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.label("Funcionalidades futuras (Em breve)");
+
+                if permissoes.contains(&AlvoNavegacao::Comercial) {
+                    ui.add_enabled(
+                        false,
+                        egui::Button::new("👥 Clientes (avançado) (Em breve)"),
+                    );
+                    ui.add_enabled(false, egui::Button::new("🧾 Vendas (Em breve)"));
+                }
+
+                if permissoes.contains(&AlvoNavegacao::Gerencia)
+                    || permissoes.contains(&AlvoNavegacao::Admin)
+                {
+                    ui.add_enabled(false, egui::Button::new("📑 Relatórios (Em breve)"));
+                    ui.add_enabled(false, egui::Button::new("📆 Calendário (Em breve)"));
+                }
+
+                if permissoes.contains(&AlvoNavegacao::Financeiro) {
+                    ui.add_enabled(
+                        false,
+                        egui::Button::new("📊 Relatórios Financeiros (Em breve)"),
+                    );
+                }
+
+                if permissoes.contains(&AlvoNavegacao::Estoque) {
+                    ui.add_enabled(
+                        false,
+                        egui::Button::new("🔁 Inventário Avançado (Em breve)"),
+                    );
+                }
+
+                if permissoes.contains(&AlvoNavegacao::Admin) {
+                    ui.add_enabled(false, egui::Button::new("⚙️ Configurações (Em breve)"));
+                    ui.add_enabled(false, egui::Button::new("🔌 Integrações (Em breve)"));
+                }
+
+                ui.add_enabled(false, egui::Button::new("🔔 Notificações (Em breve)"));
+                ui.add_enabled(false, egui::Button::new("🆘 Suporte (Em breve)"));
+                ui.add_enabled(false, egui::Button::new("❓ Ajuda (Em breve)"));
             });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {

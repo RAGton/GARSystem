@@ -8,7 +8,6 @@ use mysql::{
     FromRowError, Row, Transaction, Value,
 };
 
-// --- [CORREÇÃO APLICADA AQUI] ---
 // A assinatura completa da função foi restaurada.
 fn registrar_historico(
     tx: &mut Transaction,
@@ -29,7 +28,6 @@ fn registrar_historico(
 
 pub fn listar_ordens_servico() -> Result<Vec<OrdemServico>, ErroAplicacao> {
     let mut conn = obter_conexao()?;
-    // --- [CORREÇÃO APLICADA AQUI] ---
     // Usamos query_map, mas passamos a referência à nossa implementação manual `OrdemServico::from_row`.
     // Isso evita o erro da tupla grande.
     let ordens = conn.query_map(
@@ -61,7 +59,6 @@ pub fn buscar_os_por_id(id: u32) -> Result<OrdemServico, ErroAplicacao> {
         params! { "id" => id },
     )?.ok_or(ErroAplicacao::OsNaoEncontrada)?;
 
-    // --- [CORREÇÃO APLICADA AQUI] ---
     // O '?' agora funciona corretamente porque implementamos `From<FromRowError>` no servicos.rs
     let mut os = OrdemServico::from_row_opt(row)?;
 

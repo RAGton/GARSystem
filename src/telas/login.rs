@@ -78,7 +78,7 @@ impl TelaLogin {
     pub fn update(
         &mut self,
         ctx: &egui::Context,
-        _frame: &mut eframe::Frame,
+        frame: &mut eframe::Frame,
         logo: Option<&TextureHandle>,
     ) {
         let estado_atual = self.estado.lock().unwrap().clone();
@@ -198,6 +198,11 @@ impl TelaLogin {
                                         // Adiciona o checkbox
                                         ui.add_space(10.0);
                                         ui.checkbox(&mut self.lembrar_usuario, "Lembrar de mim");
+
+                                        // Persistir o estado de lembrar usuário imediatamente no storage
+                                        if let Some(storage) = frame.storage_mut() {
+                                            self.salvar_estado_login(storage);
+                                        }
 
                                         if user_input_response.lost_focus()
                                             && ui.input(|i| i.key_pressed(egui::Key::Enter))

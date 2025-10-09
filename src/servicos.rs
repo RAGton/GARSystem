@@ -81,6 +81,18 @@ pub struct Fornecedor {
     pub email: String,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct Cliente {
+    pub id: u32,
+    pub nome: String,
+    pub email: String,
+    pub telefone: String,
+    pub endereco: Option<String>,
+    pub inscricao_estadual: Option<String>,
+    pub cpf_cnpj: Option<String>,
+    pub credito_disponivel: f64,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Peca {
     pub id: u32,
@@ -103,6 +115,22 @@ pub struct PecaOS {
     pub quantidade: u32,
     pub preco_venda_unitario: f64,
     pub preco_total: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OrcamentoItem {
+    pub descricao: String,
+    pub quantidade: u32,
+    pub preco_unitario: f64,
+    pub preco_total: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Orcamento {
+    pub id: u32,
+    pub cliente_id: u32,
+    pub items: Vec<OrcamentoItem>,
+    pub total: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -234,4 +262,28 @@ pub fn atualizar_os(os: &OrdemServico, usuario_logado: &str) -> Result<(), ErroA
 
 pub fn criar_ordem_servico(os: &mut OrdemServico) -> Result<u32, ErroAplicacao> {
     crate::banco_de_dados::ordem_servico::criar_os(os)
+}
+
+// Orçamentos: facades para criar/obter orçamentos
+pub fn criar_orcamento(o: &Orcamento) -> Result<u32, ErroAplicacao> {
+    crate::banco_de_dados::criar_orcamento(o)
+}
+
+pub fn obter_orcamento(id: u32) -> Result<Orcamento, ErroAplicacao> {
+    crate::banco_de_dados::obter_orcamento(id)
+}
+
+// --- Clientes: fachada para chamadas ao banco ---
+pub fn listar_clientes() -> Result<Vec<Cliente>, ErroAplicacao> {
+    crate::banco_de_dados::listar_clientes()
+}
+
+pub fn obter_gastos_e_credito(cliente_id: u32) -> Result<(f64, f64), ErroAplicacao> {
+    let gastos = crate::banco_de_dados::obter_gastos_por_cliente(cliente_id)?;
+    let credito = crate::banco_de_dados::obter_credito_cliente(cliente_id)?;
+    Ok((gastos, credito))
+}
+
+pub fn criar_ou_atualizar_cliente(c: &Cliente) -> Result<u32, ErroAplicacao> {
+    crate::banco_de_dados::criar_ou_atualizar_cliente(c)
 }

@@ -4,7 +4,7 @@ use threadpool::ThreadPool;
 
 // Tamanho do pool baseado em número de CPUs para operações de bloqueio
 static POOL: Lazy<Mutex<ThreadPool>> = Lazy::new(|| {
-    let n = std::cmp::max(2, num_cpus::get());
+    let n = std::cmp::max(6, num_cpus::get());
     Mutex::new(ThreadPool::new(n))
 });
 

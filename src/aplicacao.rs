@@ -3,8 +3,8 @@
 use crate::servicos::PapelUsuario;
 use crate::telas::{
     componentes::sidebar, configuracao::TelaConfiguracao, login::TelaLogin, painel_adm::TelaAdmin,
-    painel_comercial::TelaComercial, painel_estoque::TelaEstoque,
-    painel_financeiro::TelaFinanceiro, painel_gerencia::TelaGerencia, painel_ordens::TelaOrdens,
+    painel_clientes::TelaClientes, painel_estoque::TelaEstoque, painel_financeiro::TelaFinanceiro,
+    painel_gerencia::TelaGerencia, painel_orcamentos::TelaOrcamentos, painel_ordens::TelaOrdens,
     painel_os_criar::TelaCriarOs, painel_os_edicao::TelaOsEdicao, painel_principal::TelaDashboard,
     painel_tecnico::TelaTecnico,
 };
@@ -16,19 +16,21 @@ pub enum AppEvent {
     NavegarPara(TelaAtiva),
     AbrirEditorOS(u32),
     VoltarParaDashboard,
+    FecharOverlayCriarOs,
 }
 
 pub enum EstadoTela {
     Login(TelaLogin),
     Configuracao(TelaConfiguracao),
     Dashboard(TelaDashboard),
+    Clientes(TelaClientes),
     Admin(TelaAdmin),
     CriarOs(TelaCriarOs),
     Tecnico(TelaTecnico),
     Ordens(TelaOrdens),
     OsEdicao(TelaOsEdicao),
     Financeiro(TelaFinanceiro),
-    Comercial(TelaComercial),
+    Orcamentos(TelaOrcamentos),
     Gerencia(TelaGerencia),
     Estoque(TelaEstoque),
 }
@@ -42,11 +44,12 @@ pub enum Tema {
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq)]
 pub enum TelaAtiva {
     Dashboard,
+    Clientes,
     Admin,
     Tecnico,
     CriarOs,
     Financeiro,
-    Comercial,
+    Orcamentos,
     Gerencia,
     Ordens,
     Estoque,
@@ -61,6 +64,8 @@ pub struct AplicativoPrincipal {
     logo: Option<TextureHandle>,
     logo_data: Option<ColorImage>,
     endereco_servidor: Arc<Mutex<String>>,
+    // Quando preenchido, exibe a tela de criação de OS como janela flutuante
+    overlay_criar_os: Option<TelaCriarOs>,
 }
 
 fn definir_estilo_azul(ctx: &egui::Context, tema: Tema) {
@@ -118,6 +123,7 @@ impl AplicativoPrincipal {
             logo: None,
             logo_data,
             endereco_servidor,
+            overlay_criar_os: None,
         }
     }
 }
@@ -146,6 +152,10 @@ impl eframe::App for AplicativoPrincipal {
                         proximo_estado = Some(TelaConfiguracao::new(&endereco_atual).into());
                     }
                     if let Some(Ok(papel)) = tela.obter_resultado_login() {
+                        // Persistir o estado 'lembrar usuário' quando o login for bem sucedido
+                        if let Some(storage) = frame.storage_mut() {
+                            tela.salvar_estado_login(storage);
+                        }
                         login_sucesso = Some(papel);
                     }
                 }
@@ -159,14 +169,38 @@ impl eframe::App for AplicativoPrincipal {
                         }
                     }
                     if tela.deve_voltar() {
-                        proximo_estado = Some(
-                            TelaLogin::new(
-                                Arc::clone(&self.endereco_servidor),
-                                String::new(),
-                                false,
-                            )
-                            .into(),
-                        );
+                        // Ao voltar da configuração, repassa o usuário salvo e o flag 'lembrar'
+                        if let Some(storage) = frame.storage() {
+                            let mut nome_usuario = String::new();
+                            let mut lembrar_usuario = false;
+                            if let Some(lembrar) = storage.get_string("lembrar_usuario") {
+                                if let Ok(val) = lembrar.parse::<bool>() {
+                                    lembrar_usuario = val;
+                                    if lembrar_usuario {
+                                        if let Some(guardado) = storage.get_string("nome_usuario") {
+                                            nome_usuario = guardado;
+                                        }
+                                    }
+                                }
+                            }
+                            proximo_estado = Some(
+                                TelaLogin::new(
+                                    Arc::clone(&self.endereco_servidor),
+                                    nome_usuario,
+                                    lembrar_usuario,
+                                )
+                                .into(),
+                            );
+                        } else {
+                            proximo_estado = Some(
+                                TelaLogin::new(
+                                    Arc::clone(&self.endereco_servidor),
+                                    String::new(),
+                                    false,
+                                )
+                                .into(),
+                            );
+                        }
                     }
                 }
                 _ => {
@@ -202,9 +236,34 @@ impl eframe::App for AplicativoPrincipal {
         }
 
         if self.estado_tela.is_none() {
-            self.estado_tela = Some(
-                TelaLogin::new(Arc::clone(&self.endereco_servidor), String::new(), false).into(),
-            );
+            // Ao criar a tela de login por falta de estado, repassar os valores salvos no storage
+            if let Some(storage) = frame.storage() {
+                let mut nome_usuario = String::new();
+                let mut lembrar_usuario = false;
+                if let Some(lembrar) = storage.get_string("lembrar_usuario") {
+                    if let Ok(val) = lembrar.parse::<bool>() {
+                        lembrar_usuario = val;
+                        if lembrar_usuario {
+                            if let Some(guardado) = storage.get_string("nome_usuario") {
+                                nome_usuario = guardado;
+                            }
+                        }
+                    }
+                }
+                self.estado_tela = Some(
+                    TelaLogin::new(
+                        Arc::clone(&self.endereco_servidor),
+                        nome_usuario,
+                        lembrar_usuario,
+                    )
+                    .into(),
+                );
+            } else {
+                self.estado_tela = Some(
+                    TelaLogin::new(Arc::clone(&self.endereco_servidor), String::new(), false)
+                        .into(),
+                );
+            }
         }
     }
 }
@@ -259,13 +318,15 @@ impl AplicativoPrincipal {
         egui::CentralPanel::default().show(ctx, |_| {
             evento_emitido = match estado_tela {
                 EstadoTela::Dashboard(tela) => tela.update(ctx, frame),
+                EstadoTela::Clientes(tela) => tela.update(ctx, frame),
                 EstadoTela::Admin(tela) => tela.update(ctx, frame),
                 EstadoTela::Tecnico(tela) => tela.update(ctx, frame),
                 EstadoTela::CriarOs(tela) => tela.update(ctx, frame),
                 EstadoTela::Ordens(tela) => tela.update(ctx, frame),
                 EstadoTela::OsEdicao(tela) => tela.update(ctx, frame),
                 EstadoTela::Financeiro(tela) => tela.update(ctx, frame),
-                EstadoTela::Comercial(tela) => tela.update(ctx, frame),
+                // Comercial removido (substituído por Orçamentos)
+                EstadoTela::Orcamentos(tela) => tela.update(ctx, frame),
                 EstadoTela::Gerencia(tela) => tela.update(ctx, frame),
                 EstadoTela::Estoque(tela) => tela.update(ctx, frame),
                 _ => None,
@@ -277,6 +338,17 @@ impl AplicativoPrincipal {
             evento_processado = true;
         }
 
+        // Se houver uma janela flutuante de criação de OS, exibi-la por cima da tela atual.
+        if let Some(overlay) = &mut self.overlay_criar_os {
+            let evento_overlay = overlay.show_as_window(ctx, frame);
+            if let Some(ev) = evento_overlay {
+                // fechar overlay antes de processar para evitar reentrância/confusão de estado
+                self.overlay_criar_os = None;
+                self.processar_evento(ev);
+                evento_processado = true;
+            }
+        }
+
         (deslogar_clicado, evento_processado)
     }
 
@@ -284,10 +356,23 @@ impl AplicativoPrincipal {
         match evento {
             AppEvent::NavegarPara(tela) => {
                 if let Some(papel) = self.papel_usuario_logado {
+                    // Se pedirem para abrir a tela de criação de OS enquanto estamos
+                    // na lista de Ordens, abrimos como overlay para manter a lista visível.
+                    if tela == TelaAtiva::CriarOs {
+                        if self.tela_ativa == TelaAtiva::Ordens {
+                            self.overlay_criar_os =
+                                Some(TelaCriarOs::new(Arc::clone(&self.endereco_servidor)));
+                            return;
+                        }
+                    }
+
                     self.tela_ativa = tela;
                     let novo_estado = match tela {
                         TelaAtiva::Dashboard => {
                             TelaDashboard::new(papel, Arc::clone(&self.endereco_servidor)).into()
+                        }
+                        TelaAtiva::Clientes => {
+                            TelaClientes::new(Arc::clone(&self.endereco_servidor)).into()
                         }
                         TelaAtiva::Admin => {
                             TelaAdmin::new(Arc::clone(&self.endereco_servidor)).into()
@@ -302,7 +387,9 @@ impl AplicativoPrincipal {
                             TelaCriarOs::new(Arc::clone(&self.endereco_servidor)).into()
                         }
                         TelaAtiva::Financeiro => TelaFinanceiro::new().into(),
-                        TelaAtiva::Comercial => TelaComercial::new().into(),
+                        TelaAtiva::Orcamentos => {
+                            TelaOrcamentos::new(Arc::clone(&self.endereco_servidor)).into()
+                        }
                         TelaAtiva::Gerencia => TelaGerencia::new().into(),
                         TelaAtiva::Estoque => TelaEstoque::new().into(),
                     };
@@ -312,6 +399,9 @@ impl AplicativoPrincipal {
             AppEvent::AbrirEditorOS(os_id) => {
                 self.estado_tela =
                     Some(TelaOsEdicao::new(os_id, Arc::clone(&self.endereco_servidor)).into());
+            }
+            AppEvent::FecharOverlayCriarOs => {
+                self.overlay_criar_os = None;
             }
             AppEvent::VoltarParaDashboard => {
                 if let Some(papel) = self.papel_usuario_logado {
@@ -363,6 +453,12 @@ impl From<TelaOsEdicao> for EstadoTela {
     }
 }
 
+impl From<TelaClientes> for EstadoTela {
+    fn from(t: TelaClientes) -> Self {
+        Self::Clientes(t)
+    }
+}
+
 impl From<TelaCriarOs> for EstadoTela {
     fn from(t: TelaCriarOs) -> Self {
         Self::CriarOs(t)
@@ -380,13 +476,6 @@ impl From<TelaFinanceiro> for EstadoTela {
         Self::Financeiro(t)
     }
 }
-
-impl From<TelaComercial> for EstadoTela {
-    fn from(t: TelaComercial) -> Self {
-        Self::Comercial(t)
-    }
-}
-
 impl From<TelaGerencia> for EstadoTela {
     fn from(t: TelaGerencia) -> Self {
         Self::Gerencia(t)

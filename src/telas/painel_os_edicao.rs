@@ -1,9 +1,20 @@
 // src/telas/painel_os_edicao.rs
 
 use crate::aplicacao::{AppEvent, TelaAtiva};
-use crate::servicos::{OrdemServico, Peca, PecaOS};
+use crate::servicos::{Cliente, InfoUsuario, OrdemServico, Peca, PecaOS};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
+
+// Abas internas da tela de edição de OS
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub enum AbaOs {
+    Geral,
+    Produtos,
+    Servicos,
+    Devolucoes,
+    Despesas,
+    Outras,
+}
 
 // A struct que guarda o estado da tela de edição.
 pub struct TelaOsEdicao {
@@ -14,6 +25,16 @@ pub struct TelaOsEdicao {
     filtro_peca_selecao: String,
     peca_selecionada_id: Option<u32>,
     quantidade_peca_adicionar: u32,
+    // UI state
+    aba_ativa: AbaOs,
+    valor_servico: f64,
+    // Busca / modais
+    abrir_busca_cliente: bool,
+    filtro_busca_cliente: String,
+    abrir_busca_tecnico: bool,
+    filtro_busca_tecnico: String,
+    abrir_busca_tipo: bool,
+    filtro_busca_tipo: String,
 }
 
 impl TelaOsEdicao {
@@ -29,6 +50,14 @@ impl TelaOsEdicao {
             filtro_peca_selecao: String::new(),
             peca_selecionada_id: None,
             quantidade_peca_adicionar: 1,
+            aba_ativa: AbaOs::Geral,
+            valor_servico: 0.0,
+            abrir_busca_cliente: false,
+            filtro_busca_cliente: String::new(),
+            abrir_busca_tecnico: false,
+            filtro_busca_tecnico: String::new(),
+            abrir_busca_tipo: false,
+            filtro_busca_tipo: String::new(),
         }
     }
 
@@ -37,19 +66,179 @@ impl TelaOsEdicao {
         let mut evento_emitido = None;
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading(format!("Gestão da Ordem de Serviço #{}", self.os_data.id));
+            // Top toolbar (ícones - OK/Cancelar)
+            ui.horizontal(|ui| {
+                if ui.button("🖶 Salvar").clicked() {
+                    match crate::servicos::atualizar_os(&self.os_data, &self.usuario_logado) {
+                        Ok(_) => println!("OS {} salva com sucesso!", self.os_data.id),
+                        Err(e) => eprintln!("Erro ao salvar OS {}: {}", self.os_data.id, e),
+                    }
+                }
+                if ui.button("✖ Cancelar").clicked() {
+                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
+                }
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(format!("Nº OS: {}", self.os_data.id));
+                });
+            });
+
             ui.separator();
 
+            // Conteúdo principal com duas colunas
             egui::ScrollArea::vertical().show(ui, |ui| {
-                self.ui_detalhes_edicao(ui);
-                ui.separator();
-                self.ui_pecas_servicos(ui); // Nova seção de peças
+                ui.horizontal(|ui| {
+                    // Coluna esquerda: Geral
+                    ui.vertical(|ui| {
+                        ui.group(|ui| {
+                            ui.heading("Geral");
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.label("Solicitante / Atendente");
+                                    ui.text_edit_singleline(&mut self.os_data.atendente);
+                                    ui.label("Prev. Entrega");
+                                    ui.text_edit_singleline(&mut self.os_data.prazo_entrega);
+                                    ui.label("Hora Entrega");
+                                    ui.text_edit_singleline(&mut self.os_data.horario_abertura);
+                                });
+                                ui.vertical(|ui| {
+                                    ui.label("Solicitação");
+                                    ui.text_edit_multiline(&mut self.os_data.observacoes);
+                                });
+                            });
+                        });
+
+                        ui.add_space(8.0);
+
+                        // Abas simuladas
+                        ui.horizontal(|ui| {
+                            ui.selectable_value(&mut self.aba_ativa, AbaOs::Produtos, "Produtos");
+                            ui.selectable_value(
+                                &mut self.aba_ativa,
+                                AbaOs::Servicos,
+                                "Serviços/Mão de Obra",
+                            );
+                            ui.selectable_value(
+                                &mut self.aba_ativa,
+                                AbaOs::Devolucoes,
+                                "Devoluções",
+                            );
+                            ui.selectable_value(
+                                &mut self.aba_ativa,
+                                AbaOs::Despesas,
+                                "Despesas/Serv.Terceiros",
+                            );
+                            ui.selectable_value(
+                                &mut self.aba_ativa,
+                                AbaOs::Outras,
+                                "Outras Informações",
+                            );
+                        });
+
+                        ui.add_space(6.0);
+
+                        // Conteúdo das abas (usar blocos para garantir retorno `()` em todos os braços)
+                        match self.aba_ativa {
+                            AbaOs::Produtos => {
+                                self.ui_pecas_servicos(ui);
+                            }
+                            AbaOs::Servicos => {
+                                self.ui_servicos(ui);
+                            }
+                            AbaOs::Devolucoes => {
+                                ui.label("Nenhuma devolução registrada.");
+                            }
+                            AbaOs::Despesas => {
+                                ui.label("Nenhuma despesa registrada.");
+                            }
+                            AbaOs::Outras => {
+                                ui.label("Informações adicionais...");
+                            }
+                            AbaOs::Geral => {
+                                // nada a fazer
+                            }
+                        }
+                    });
+
+                    // Coluna direita: informações do cliente, técnico e valores
+                    ui.vertical(|ui| {
+                        ui.group(|ui| {
+                            ui.heading("Informações");
+
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.label("Cliente:");
+                                    ui.text_edit_singleline(&mut self.os_data.cliente);
+                                });
+                                // lupa conectada ao campo
+                                if ui
+                                    .add_sized([28.0, 24.0], egui::Button::new("🔍"))
+                                    .clicked()
+                                {
+                                    self.abrir_busca_cliente = true;
+                                }
+                            });
+
+                            ui.label(format!("Telefone: {}", self.os_data.telefone_cliente));
+
+                            ui.horizontal(|ui| {
+                                ui.vertical(|ui| {
+                                    ui.label("Técnico:");
+                                    ui.text_edit_singleline(
+                                        &mut self.os_data.nome_tecnico_responsavel,
+                                    );
+                                });
+                                if ui
+                                    .add_sized([28.0, 24.0], egui::Button::new("🔍"))
+                                    .clicked()
+                                {
+                                    self.abrir_busca_tecnico = true;
+                                }
+                            });
+
+                            ui.separator();
+
+                            ui.label("Condição de Pagamento / Tipo OS");
+                            ui.vertical(|ui| {
+                                ui.text_edit_singleline(&mut self.os_data.observacoes);
+                                // botão de busca embaixo do campo tipo (conectado)
+                                if ui
+                                    .add_sized([80.0, 22.0], egui::Button::new("🔍 Buscar Tipo"))
+                                    .clicked()
+                                {
+                                    self.abrir_busca_tipo = true;
+                                }
+                            });
+                        });
+
+                        ui.add_space(8.0);
+
+                        ui.group(|ui| {
+                            ui.heading("Valores");
+                            ui.horizontal(|ui| {
+                                ui.label("Valor Peças:");
+                                ui.strong(format!("R$ {:.2}", self.os_data.total_pecas));
+                            });
+                            ui.horizontal(|ui| {
+                                ui.label("Valor Serviço:");
+                                ui.add(egui::DragValue::new(&mut self.valor_servico).speed(0.5));
+                            });
+                            ui.separator();
+                            ui.horizontal(|ui| {
+                                ui.label("Valor Total:");
+                                ui.strong(format!(
+                                    "R$ {:.2}",
+                                    self.os_data.total_pecas + self.valor_servico
+                                ));
+                            });
+                        });
+                    });
+                });
             });
 
             ui.separator();
             ui.heading("Histórico de Alterações");
             self.ui_tabela_historico(ui);
-            ui.add_space(20.0);
+            ui.add_space(12.0);
 
             ui.horizontal(|ui| {
                 if ui.button("Salvar Alterações").clicked() {
@@ -57,8 +246,6 @@ impl TelaOsEdicao {
                         Ok(_) => println!("OS {} salva com sucesso!", self.os_data.id),
                         Err(e) => eprintln!("Erro ao salvar OS {}: {}", self.os_data.id, e),
                     }
-                    // Idealmente, aqui você emitiria um evento para mostrar uma notificação de sucesso/erro.
-                    // evento_emitido = Some(AppEvent::MostrarNotificacao("OS salva!".to_string()));
                 }
                 if ui.button("Voltar ao Painel Técnico").clicked() {
                     evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
@@ -66,10 +253,99 @@ impl TelaOsEdicao {
             });
         });
 
+        // Modal de busca de cliente
+        if self.abrir_busca_cliente {
+            egui::Window::new("Buscar Cliente")
+                .resizable(true)
+                .collapsible(false)
+                .show(ctx, |ui| {
+                    ui.label("Filtrar:");
+                    ui.text_edit_singleline(&mut self.filtro_busca_cliente);
+                    ui.separator();
+                    if let Ok(list) = crate::servicos::listar_clientes() {
+                        for c in list.into_iter().filter(|c| {
+                            c.nome
+                                .to_lowercase()
+                                .contains(&self.filtro_busca_cliente.to_lowercase())
+                        }) {
+                            if ui.button(format!("{} - {}", c.id, c.nome)).clicked() {
+                                self.os_data.cliente = c.nome.clone();
+                                self.abrir_busca_cliente = false;
+                                break;
+                            }
+                        }
+                    } else {
+                        ui.label("Falha ao obter clientes");
+                    }
+                    if ui.button("Fechar").clicked() {
+                        self.abrir_busca_cliente = false;
+                    }
+                });
+        }
+
+        // Modal de busca de técnico (lista de usuários com papel Técnico)
+        if self.abrir_busca_tecnico {
+            egui::Window::new("Buscar Técnico")
+                .resizable(true)
+                .collapsible(false)
+                .show(ctx, |ui| {
+                    ui.label("Filtrar:");
+                    ui.text_edit_singleline(&mut self.filtro_busca_tecnico);
+                    ui.separator();
+                    let usuarios = crate::servicos::listar_usuarios();
+                    for u in usuarios.into_iter().filter(|u| {
+                        u.nome_usuario
+                            .to_lowercase()
+                            .contains(&self.filtro_busca_tecnico.to_lowercase())
+                    }) {
+                        // nota: coluna role não está no InfoUsuario; estamos simplificando
+                        if ui
+                            .button(format!("{} - {}", u.id, u.nome_usuario))
+                            .clicked()
+                        {
+                            self.os_data.nome_tecnico_responsavel = u.nome_usuario.clone();
+                            self.abrir_busca_tecnico = false;
+                            break;
+                        }
+                    }
+                    if ui.button("Fechar").clicked() {
+                        self.abrir_busca_tecnico = false;
+                    }
+                });
+        }
+
+        // Modal de busca de tipo
+        if self.abrir_busca_tipo {
+            egui::Window::new("Buscar Tipo de OS")
+                .resizable(true)
+                .collapsible(false)
+                .show(ctx, |ui| {
+                    ui.label("Filtrar:");
+                    ui.text_edit_singleline(&mut self.filtro_busca_tipo);
+                    ui.separator();
+                    let tipos = vec!["Ordem de Serviço", "Orçamento", "Manutenção", "Instalação"];
+                    for t in tipos.into_iter().filter(|t| {
+                        t.to_lowercase()
+                            .contains(&self.filtro_busca_tipo.to_lowercase())
+                    }) {
+                        if ui.button(t).clicked() {
+                            // colocar o tipo no campo observacoes por enquanto
+                            self.os_data.observacoes = format!("Tipo: {}", t);
+                            self.abrir_busca_tipo = false;
+                            break;
+                        }
+                    }
+                    if ui.button("Fechar").clicked() {
+                        self.abrir_busca_tipo = false;
+                    }
+                });
+        }
+
         evento_emitido
     }
 
     fn ui_detalhes_edicao(&mut self, ui: &mut egui::Ui) {
+        // Este método foi reduzido — a maior parte dos campos foi movida para o novo layout
         ui.label("Parecer Técnico:");
         ui.text_edit_multiline(&mut self.os_data.parecer_tecnico);
     }
@@ -133,7 +409,7 @@ impl TelaOsEdicao {
                         };
                         self.os_data.pecas.push(peca_os);
                         self.recalcular_totais();
-                        self.peca_selecionada_id = None; // Resetar seleção
+                        self.peca_selecionada_id = None;
                         self.quantidade_peca_adicionar = 1;
                     }
                 }
@@ -141,19 +417,29 @@ impl TelaOsEdicao {
         });
 
         egui::Grid::new("grid_pecas_os")
-            .num_columns(4)
+            .num_columns(5)
             .show(ui, |ui| {
-                ui.strong("Descrição da Peça");
+                ui.strong("Descrição");
                 ui.strong("Qtd.");
                 ui.strong("Vlr. Unit.");
                 ui.strong("Vlr. Total");
+                ui.strong("Ações");
                 ui.end_row();
 
-                for peca in &self.os_data.pecas {
+                for (idx, peca) in self.os_data.pecas.iter_mut().enumerate() {
                     ui.label(&peca.descricao);
-                    ui.label(peca.quantidade.to_string());
+                    ui.add(
+                        egui::DragValue::new(&mut peca.quantidade)
+                            .speed(1.0)
+                            .range(1..=999),
+                    );
                     ui.label(format!("R$ {:.2}", peca.preco_venda_unitario));
                     ui.label(format!("R$ {:.2}", peca.preco_total));
+                    if ui.button("Remover").clicked() {
+                        self.os_data.pecas.remove(idx);
+                        self.recalcular_totais();
+                        break;
+                    }
                     ui.end_row();
                 }
             });
@@ -168,6 +454,22 @@ impl TelaOsEdicao {
     fn ui_tabela_historico(&mut self, ui: &mut egui::Ui) {
         // Implementação simples para evitar warning de variável não usada.
         ui.label("Sem histórico disponível");
+    }
+
+    // Placeholder para a aba de serviços (Mão de obra). Implementação mínima
+    // por enquanto para compilar e permitir futura expansão.
+    fn ui_servicos(&mut self, ui: &mut egui::Ui) {
+        ui.heading("Serviços / Mão de Obra");
+        ui.label("Adicionar descrição do serviço e valor.");
+        ui.horizontal(|ui| {
+            ui.label("Descrição:");
+            ui.text_edit_singleline(&mut self.os_data.observacoes);
+        });
+        ui.horizontal(|ui| {
+            ui.label("Valor:");
+            // Como valor de serviço separado usamos self.valor_servico
+            ui.add(egui::DragValue::new(&mut self.valor_servico).speed(0.5));
+        });
     }
 
     fn recalcular_totais(&mut self) {

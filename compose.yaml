@@ -31,7 +31,6 @@ services:
       - "3306:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-    # [NOVO] Seção de verificação de saúde.
     healthcheck:
       test: ["CMD", "mysqladmin" ,"ping", "-h", "localhost"]
       interval: 10s
