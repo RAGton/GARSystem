@@ -1,9 +1,10 @@
 use crate::aplicacao::AppEvent;
 use crate::servicos::Servico;
 use eframe::egui;
+use std::sync::{Arc, Mutex};
 
 pub struct TelaServicos {
-    lista: Vec<Servico>,
+    lista: Arc<Mutex<Option<Vec<Servico>>>>,
     nome: String,
     descricao: String,
     preco: f64,
@@ -11,8 +12,17 @@ pub struct TelaServicos {
 
 impl TelaServicos {
     pub fn new() -> Self {
+        let lista = Arc::new(Mutex::new(None));
+        let lista_bg = Arc::clone(&lista);
+        crate::executor::spawn(move || {
+            let l = crate::servicos::listar_servicos();
+            if let Ok(mut g) = lista_bg.lock() {
+                *g = Some(l);
+            }
+        });
+
         Self {
-            lista: crate::servicos::listar_servicos(),
+            lista,
             nome: String::new(),
             descricao: String::new(),
             preco: 0.0,
@@ -38,17 +48,33 @@ impl TelaServicos {
                     descricao: self.descricao.clone(),
                     preco: self.preco,
                 };
-                let _id = crate::servicos::criar_servico(&s);
-                self.lista = crate::servicos::listar_servicos();
+                // criar e recarregar em background
+                let lista_for_update = Arc::clone(&self.lista);
+                crate::executor::spawn(move || {
+                    let _ = crate::servicos::criar_servico(&s);
+                    let l = crate::servicos::listar_servicos();
+                    if let Ok(mut g) = lista_for_update.lock() {
+                        *g = Some(l);
+                    }
+                });
                 self.nome.clear();
                 self.descricao.clear();
                 self.preco = 0.0;
             }
             ui.separator();
-            for s in &self.lista {
-                ui.horizontal(|ui| {
-                    ui.label(format!("[{}] {} - R$ {:.2}", s.id, s.nome, s.preco));
-                });
+
+            if let Ok(g) = self.lista.lock() {
+                if let Some(list) = &*g {
+                    for s in list.iter() {
+                        ui.horizontal(|ui| {
+                            ui.label(format!("[{}] {} - R$ {:.2}", s.id, s.nome, s.preco));
+                        });
+                    }
+                } else {
+                    ui.label("Carregando serviços...");
+                }
+            } else {
+                ui.label("Carregando serviços...");
             }
         });
         None

@@ -87,6 +87,7 @@ impl AplicativoPrincipal {
         let mut endereco_servidor_str = "http://localhost:3000".to_string();
         let mut nome_usuario = String::new();
         let mut lembrar_usuario = false;
+        let mut tema_atual = Tema::Escuro;
 
         if let Some(storage) = cc.storage {
             if let Some(addr) = storage.get_string("endereco_servidor") {
@@ -104,6 +105,13 @@ impl AplicativoPrincipal {
                     }
                 }
             }
+            if let Some(tema_str) = storage.get_string("tema") {
+                tema_atual = if tema_str.to_lowercase() == "claro" {
+                    Tema::Claro
+                } else {
+                    Tema::Escuro
+                };
+            }
         }
 
         let endereco_servidor = Arc::new(Mutex::new(endereco_servidor_str));
@@ -113,18 +121,13 @@ impl AplicativoPrincipal {
             nome_usuario,
             lembrar_usuario,
         )));
-        // Pré-carregar algumas listas (apenas chamadas de leitura) para garantir
-        // que as funções/facades estejam sendo utilizadas e reduzir warnings.
-        let _ = crate::servicos::listar_servicos();
-        let _ = crate::servicos::listar_clientes();
-        let _ = crate::servicos::listar_usuarios();
-        let _ = crate::servicos::listar_ordens_servico();
+        // Evitar preloads síncronos aqui para não travar a UI na inicialização.
 
         let logo_data = sidebar::carregar_logo().ok();
 
         Self {
             estado_tela,
-            tema_atual: Tema::Escuro,
+            tema_atual,
             papel_usuario_logado: None,
             sidebar_aberto: true,
             tela_ativa: TelaAtiva::Dashboard,
@@ -138,6 +141,19 @@ impl AplicativoPrincipal {
 
 impl eframe::App for AplicativoPrincipal {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Sincronizar tema se tiver sido alterado via Login/Storage
+        if let Some(storage) = frame.storage() {
+            if let Some(tema_str) = storage.get_string("tema") {
+                let novo = if tema_str.to_lowercase() == "claro" {
+                    Tema::Claro
+                } else {
+                    Tema::Escuro
+                };
+                if novo != self.tema_atual {
+                    self.tema_atual = novo;
+                }
+            }
+        }
         definir_estilo_azul(ctx, self.tema_atual);
 
         if self.logo.is_none() {
@@ -307,6 +323,14 @@ impl AplicativoPrincipal {
                         } else {
                             Tema::Escuro
                         };
+                        if let Some(storage) = frame.storage_mut() {
+                            let tema_str = if self.tema_atual == Tema::Claro {
+                                "claro".to_string()
+                            } else {
+                                "escuro".to_string()
+                            };
+                            storage.set_string("tema", tema_str);
+                        }
                     }
                 });
             });
@@ -371,6 +395,10 @@ impl AplicativoPrincipal {
                         if self.tela_ativa == TelaAtiva::Ordens {
                             self.overlay_criar_os =
                                 Some(TelaCriarOs::new(Arc::clone(&self.endereco_servidor)));
+                            // Garantir que continuamos com uma tela ativa (Ordens)
+                            self.estado_tela = Some(
+                                TelaOrdens::new(papel, Arc::clone(&self.endereco_servidor)).into(),
+                            );
                             return;
                         }
                     }

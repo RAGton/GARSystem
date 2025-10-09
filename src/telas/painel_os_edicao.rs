@@ -39,24 +39,83 @@ pub struct TelaOsEdicao {
     filtro_busca_tecnico: String,
     abrir_busca_tipo: bool,
     filtro_busca_tipo: String,
+    // Loaders em background para evitar travar a UI
+    os_loader: Arc<Mutex<Option<OrdemServico>>>,
+    pecas_loader: Arc<Mutex<Option<Vec<Peca>>>>,
+    servicos_loader: Arc<Mutex<Option<Vec<crate::servicos::Servico>>>>,
 }
 
 impl TelaOsEdicao {
     // O construtor recebe o ID da OS que precisa ser editada.
     pub fn new(os_id: u32, _endereco_servidor: Arc<Mutex<String>>) -> Self {
-        let os_data = crate::servicos::buscar_os_por_id(os_id)
-            .expect("Falha ao carregar dados da Ordem de Serviço");
+        // Placeholder inicial enquanto carregamos em background
+        let placeholder = OrdemServico {
+            id: os_id,
+            cliente: String::new(),
+            equipamento: String::new(),
+            defeito_relatado: String::new(),
+            status: crate::servicos::StatusOS::Aberta,
+            parecer_tecnico: String::new(),
+            situacao: crate::servicos::SituacaoOS::Orcamento,
+            numero_serie_equipamento: String::new(),
+            observacoes: String::new(),
+            nome_tecnico_responsavel: String::new(),
+            atendente: String::new(),
+            horario_abertura: String::new(),
+            telefone_cliente: String::new(),
+            data_chegada: String::new(),
+            prazo_entrega: String::new(),
+            historico_edicoes: Vec::new(),
+            pecas: Vec::new(),
+            total_pecas: 0.0,
+            servicos: Vec::new(),
+            total_servicos: 0.0,
+        };
+
+        let os_loader: Arc<Mutex<Option<OrdemServico>>> = Arc::new(Mutex::new(None));
+        let pecas_loader: Arc<Mutex<Option<Vec<Peca>>>> = Arc::new(Mutex::new(None));
+        let servicos_loader: Arc<Mutex<Option<Vec<crate::servicos::Servico>>>> =
+            Arc::new(Mutex::new(None));
+
+        // Carregar OS em background
+        let os_loader_cl = Arc::clone(&os_loader);
+        crate::executor::spawn(move || match crate::servicos::buscar_os_por_id(os_id) {
+            Ok(os) => {
+                if let Ok(mut g) = os_loader_cl.lock() {
+                    *g = Some(os);
+                }
+            }
+            Err(e) => eprintln!("Falha ao carregar OS {}: {}", os_id, e),
+        });
+
+        // Carregar peças em background
+        let pecas_loader_cl = Arc::clone(&pecas_loader);
+        crate::executor::spawn(move || {
+            let lista = crate::banco_de_dados::estoque::listar_pecas().unwrap_or_default();
+            if let Ok(mut g) = pecas_loader_cl.lock() {
+                *g = Some(lista);
+            }
+        });
+
+        // Carregar serviços em background
+        let servicos_loader_cl = Arc::clone(&servicos_loader);
+        crate::executor::spawn(move || {
+            let lista = crate::servicos::listar_servicos();
+            if let Ok(mut g) = servicos_loader_cl.lock() {
+                *g = Some(lista);
+            }
+        });
 
         Self {
-            os_data,
-            usuario_logado: "admin".to_string(), // Placeholder
-            lista_pecas_estoque: crate::banco_de_dados::estoque::listar_pecas().unwrap_or_default(),
+            os_data: placeholder,
+            usuario_logado: "admin".to_string(),
+            lista_pecas_estoque: Vec::new(),
             filtro_peca_selecao: String::new(),
             peca_selecionada_id: None,
             quantidade_peca_adicionar: 1,
             aba_ativa: AbaOs::Geral,
             valor_servico: 0.0,
-            lista_servicos: crate::servicos::listar_servicos(),
+            lista_servicos: Vec::new(),
             servico_selecionado_id: None,
             quantidade_servico: 1,
             abrir_busca_cliente: false,
@@ -65,12 +124,43 @@ impl TelaOsEdicao {
             filtro_busca_tecnico: String::new(),
             abrir_busca_tipo: false,
             filtro_busca_tipo: String::new(),
+            os_loader,
+            pecas_loader,
+            servicos_loader,
         }
     }
 
     // O update desta tela também retorna um evento para a aplicação principal.
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         let mut evento_emitido = None;
+
+        // Incorporar dados carregados em background, se disponíveis
+        let mut refresh = false;
+        if let Ok(mut g) = self.os_loader.lock() {
+            if let Some(os) = g.take() {
+                self.os_data = os;
+                refresh = true;
+            }
+        }
+        if self.lista_pecas_estoque.is_empty() {
+            if let Ok(mut g) = self.pecas_loader.lock() {
+                if let Some(lista) = g.take() {
+                    self.lista_pecas_estoque = lista;
+                    refresh = true;
+                }
+            }
+        }
+        if self.lista_servicos.is_empty() {
+            if let Ok(mut g) = self.servicos_loader.lock() {
+                if let Some(lista) = g.take() {
+                    self.lista_servicos = lista;
+                    refresh = true;
+                }
+            }
+        }
+        if refresh {
+            ctx.request_repaint();
+        }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // Top toolbar (ícones - OK/Cancelar)
