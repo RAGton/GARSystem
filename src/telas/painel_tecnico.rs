@@ -1,7 +1,7 @@
 // src/telas/painel_tecnico.rs
 
 use crate::aplicacao::AppEvent;
-use crate::servicos::{OrdemServico, StatusOS};
+use crate::servicos::OrdemServico;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 

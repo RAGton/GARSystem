@@ -118,3 +118,33 @@ O projeto agora é executado em duas partes independentes: o ambiente de servido
     ```
 
     A interface gráfica será compilada e iniciada. Agora, ao fazer login, ela se comunicará com o servidor que está rodando no contêiner.
+
+    ## 5. Novas funcionalidades adicionadas (Serviços / Impressão)
+
+    Adicionei suporte a "Serviços" (mão de obra) com persistência no banco e integração com Ordens de Serviço. As principais funções e pontos de integração criados são:
+
+    * Banco de dados (DDL):
+        * `servicos` (id, nome, descricao, preco)
+        * `ordem_servico_servicos` (pivot: ordem_servico_id, servico_id, quantidade, preco_unitario)
+
+    * Módulo `src/banco_de_dados/servico.rs` (funções públicas):
+        * `listar_servicos() -> Result<Vec<Servico>, ErroAplicacao>`: retorna todos os serviços cadastrados.
+        * `criar_servico(s: &Servico) -> Result<u32, ErroAplicacao>`: insere um novo serviço e retorna o id criado.
+        * `listar_servicos_da_os(os_id: u32) -> Result<Vec<ServicoOS>, ErroAplicacao>`: retorna os serviços vinculados a uma OS.
+        * `gravar_servicos_na_os(os_id: u32, servicos: &Vec<ServicoOS>) -> Result<(), ErroAplicacao>`: grava/atualiza os serviços associados a uma OS.
+
+    * Facade `src/servicos.rs` (funções expostas):
+        * `listar_servicos() -> Vec<Servico>`: delega ao `banco_de_dados::servico::listar_servicos`.
+        * `criar_servico(s: &Servico) -> u32`: delega ao `banco_de_dados::servico::criar_servico`.
+
+    * Integração com Ordens de Serviço (`src/banco_de_dados/ordem_servico.rs`):
+        * `buscar_os_por_id(id)` agora carrega também os serviços associados (via `listar_servicos_da_os`).
+        * `criar_os` e `atualizar_os` gravam os serviços associados à OS (via `gravar_servicos_na_os`).
+
+    * Visualização / Impressão na UI:
+        * `src/telas/painel_ordens.rs`: adicionei um botão "📄 Ver/Imprimir" na lista de ordens (visível a Comercial/Administrador) que abre um modal com a OS formatada.
+        * O modal tem o botão "Exportar TXT" que salva um arquivo `os_<id>.txt` no diretório de execução com o conteúdo da OS (peças, serviços, totais e observações).
+
+    Observações:
+    * Se o seu banco ainda não tiver as tabelas `servicos` e `ordem_servico_servicos`, atualize `db-init/init.sql` (já incluí as DDLs no arquivo) e reinicie os containers para que o MySQL execute as criações.
+    * A exportação para TXT é propositalmente simples e portátil; se quiser exportar para PDF ou enviar à impressora diretamente, posso adicionar essa opção.

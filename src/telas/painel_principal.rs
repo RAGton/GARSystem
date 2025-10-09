@@ -33,11 +33,17 @@ impl TelaDashboard {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.heading("Dashboard");
-            ui.label("Relatórios e gráficos da empresa.");
+            ui.label(format!("Bem-vindo: {:?}", self.papel_usuario));
             ui.separator();
 
-            // TODO: Adicionar gráficos aqui
-            ui.label("Gráficos em breve...");
+            ui.horizontal(|ui| {
+                if botao_menu(ui, "⚙️", "Config").clicked() {
+                    // apenas demonstrativo — o AppEvent será produzido por quem chama a tela
+                }
+                if botao_menu(ui, "🛠️", "Serviços").clicked() {
+                    // similar: demonstra uso
+                }
+            });
         });
 
         evento_emitido
@@ -58,6 +64,7 @@ fn botao_menu(ui: &mut egui::Ui, icone: &str, texto: &str) -> egui::Response {
             .stroke(visuals.bg_stroke);
 
         frame.show(ui, |ui| {
+            #[allow(deprecated)]
             ui.allocate_ui_at_rect(rect, |ui| {
                 ui.centered_and_justified(|ui| {
                     ui.vertical_centered(|ui| {

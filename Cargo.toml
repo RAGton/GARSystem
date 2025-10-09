@@ -46,3 +46,6 @@ dotenvy = "0.15"
 # Versão fixada para estabilidade
 mysql = "25.0"
 bcrypt = "0.15"
+genpdf = "0.2"
+open = "1.7"
+printpdf = "0.3"

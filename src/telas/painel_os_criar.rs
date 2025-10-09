@@ -1,7 +1,7 @@
 // src/telas/painel_os_criar.rs
 
 use crate::aplicacao::AppEvent;
-use crate::servicos::{Fornecedor, InfoUsuario, OrdemServico, Peca, PecaOS, SituacaoOS, StatusOS};
+use crate::servicos::{InfoUsuario, OrdemServico, Peca, PecaOS, SituacaoOS, StatusOS};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
@@ -48,6 +48,8 @@ impl TelaCriarOs {
                 historico_edicoes: Vec::new(),
                 pecas: Vec::new(),
                 total_pecas: 0.0,
+                servicos: Vec::new(),
+                total_servicos: 0.0,
             },
             lista_pecas_estoque: lista_pecas,
             filtro_peca: String::new(),

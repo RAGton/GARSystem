@@ -1,12 +1,10 @@
 // src/telas/painel_orcamentos.rs
 use crate::aplicacao::AppEvent;
 use crate::http_client::get_client;
-use crate::servicos::Cliente;
 use eframe::egui;
 use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct ItemOrcamento {
@@ -64,7 +62,7 @@ impl TelaOrcamentos {
                         .clicked()
                     {
                         // salvar sem travar UI -> enviar POST /orcamentos
-                        let cliente = self.cliente.clone();
+                        let _cliente = self.cliente.clone();
                         let itens = self.itens.clone();
                         let endereco = Arc::clone(&self.endereco_servidor);
                         thread::spawn(move || {

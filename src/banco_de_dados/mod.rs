@@ -8,6 +8,7 @@ pub mod estoque;
 pub mod init;
 pub mod orcamento;
 pub mod ordem_servico;
+pub mod servico;
 pub mod usuario;
 
 // 2. Re-exporta as funções públicas que serão usadas pelo resto da aplicação.
@@ -19,6 +20,7 @@ pub use cliente::{
 pub use init::inicializar;
 pub use orcamento::{criar_orcamento, obter_orcamento};
 pub use ordem_servico::{atualizar_os, buscar_os_por_id, listar_ordens_servico};
+pub use servico::{criar_servico as criar_servico_db, listar_servicos as listar_servicos_db};
 pub use usuario::{
     criar_usuario, listar_todos_usuarios, remover_usuario, verificar_senha_e_obter_papel,
 };

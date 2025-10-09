@@ -1,5 +1,5 @@
 use crate::aplicacao::AppEvent;
-use crate::servicos::{Cliente, listar_clientes, obter_gastos_e_credito, criar_ou_atualizar_cliente};
+use crate::servicos::{Cliente, listar_clientes, obter_gastos_e_credito};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 

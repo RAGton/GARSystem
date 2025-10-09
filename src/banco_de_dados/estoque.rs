@@ -1,5 +1,6 @@
 // src/banco_de_dados/estoque.rs
 
+// ...existing code...
 use super::conexao::obter_conexao;
 use crate::servicos::{ErroAplicacao, Fornecedor, Peca};
 use mysql::prelude::*;
@@ -8,8 +9,9 @@ pub fn listar_pecas() -> Result<Vec<Peca>, ErroAplicacao> {
     let mut conn = obter_conexao()?;
     let pecas = conn.query_map(
         "SELECT id, codigo_interno, part_number, descricao, fabricante, localizacao, estoque_atual, estoque_minimo, preco_custo, preco_venda FROM pecas ORDER BY descricao",
-        |(id, codigo_interno, part_number, descricao, fabricante, localizacao, estoque_atual, estoque_minimo, preco_custo, preco_venda)| {
-            Peca { id, codigo_interno, part_number, descricao, fabricante, localizacao, estoque_atual, estoque_minimo, preco_custo, preco_venda }
+        |(id, codigo_interno, part_number, descricao, fabricante, localizacao, estoque_atual, estoque_minimo, preco_custo, preco_venda): (u32, String, String, String, String, String, i32, i32, f64, f64)| {
+            // por compatibilidade, usamos 'descricao' também como 'nome' curto
+            Peca { id, nome: descricao.clone(), codigo_interno, part_number, descricao, fabricante, localizacao, estoque_atual, estoque_minimo, preco_custo, preco_venda }
         }
     )?;
     Ok(pecas)

@@ -157,6 +157,25 @@ CREATE TABLE IF NOT EXISTS movimentos_estoque (
     FOREIGN KEY (peca_id) REFERENCES pecas(id)
 );
 
+-- Tabela de serviços (mão de obra)
+CREATE TABLE IF NOT EXISTS servicos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    nome VARCHAR(255) NOT NULL,
+    descricao TEXT,
+    preco DECIMAL(10,2) NOT NULL DEFAULT 0.00
+);
+
+-- Tabela pivot para relacionar serviços e Ordens de Serviço
+CREATE TABLE IF NOT EXISTS ordem_servico_servicos (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    ordem_servico_id INT NOT NULL,
+    servico_id INT NOT NULL,
+    quantidade INT NOT NULL DEFAULT 1,
+    preco_unitario DECIMAL(10,2) NOT NULL DEFAULT 0.00,
+    FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id) ON DELETE CASCADE,
+    FOREIGN KEY (servico_id) REFERENCES servicos(id)
+);
+
 -- --- [NOVO] Tabelas do Módulo de Estoque ---
 
 CREATE TABLE IF NOT EXISTS fornecedores (

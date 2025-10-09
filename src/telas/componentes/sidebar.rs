@@ -58,118 +58,120 @@ pub fn mostrar(
     logo: Option<&TextureHandle>,
 ) -> Option<AppEvent> {
     let mut evento_emitido: Option<AppEvent> = None;
-
     let permissoes = montar_permissoes(papel_usuario);
 
     egui::SidePanel::left("sidebar")
         .resizable(true)
         .default_width(200.0)
         .show_animated(ctx, sidebar_aberto, |ui| {
-            ui.with_layout(egui::Layout::top_down(egui::Align::LEFT), |ui| {
+            // --- SEÇÃO SUPERIOR: LOGO E VERSÃO NO FINAL ---
+            ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
                 ui.add_space(10.0);
                 if let Some(logo_texture) = logo {
                     ui.add(egui::Image::new(logo_texture).max_width(180.0));
                 }
                 ui.add_space(10.0);
-                ui.separator();
-
-                ui.label("Navegação");
-
-                // Dashboard: somente para papéis com acesso (Admin, Gerencia, Comercial)
-                if matches!(
-                    papel_usuario,
-                    PapelUsuario::Administrador | PapelUsuario::Gerencia | PapelUsuario::Comercial
-                ) {
-                    if ui.add(egui::Button::new("🏠 Dashboard")).clicked() {
-                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
-                    }
-                }
-
-                if permissoes.contains(&AlvoNavegacao::Admin)
-                    && ui.add(egui::Button::new("💼 Administrativo")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
-                }
-
-                // Ordens de Serviço: disponível para Admin, Comercial e Técnico
-                if permissoes.contains(&AlvoNavegacao::Admin)
-                    || permissoes.contains(&AlvoNavegacao::Comercial)
-                    || permissoes.contains(&AlvoNavegacao::Tecnico)
-                {
-                    if ui.add(egui::Button::new("📝 Ordens de Serviço")).clicked() {
-                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Ordens));
-                    }
-                }
-
-                if permissoes.contains(&AlvoNavegacao::Financeiro)
-                    && ui.add(egui::Button::new("💰 Financeiro")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
-                }
-                if permissoes.contains(&AlvoNavegacao::Comercial)
-                    && ui.add(egui::Button::new("📈 Orçamentos")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Orcamentos));
-                }
-                if permissoes.contains(&AlvoNavegacao::Gerencia)
-                    && ui.add(egui::Button::new("📊 Gerência")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
-                }
-                if permissoes.contains(&AlvoNavegacao::Estoque)
-                    && ui.add(egui::Button::new("📦 Estoque")).clicked()
-                {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Estoque));
-                }
-
-                // Clientes: acessível a todos os usuários
-                if ui.add(egui::Button::new("👥 Clientes")).clicked() {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Clientes));
-                }
-
-                ui.add_space(8.0);
-                ui.separator();
-                ui.label("Funcionalidades futuras (Em breve)");
-
-                if permissoes.contains(&AlvoNavegacao::Comercial) {
-                    ui.add_enabled(
-                        false,
-                        egui::Button::new("👥 Clientes (avançado) (Em breve)"),
-                    );
-                    ui.add_enabled(false, egui::Button::new("🧾 Vendas (Em breve)"));
-                }
-
-                if permissoes.contains(&AlvoNavegacao::Gerencia)
-                    || permissoes.contains(&AlvoNavegacao::Admin)
-                {
-                    ui.add_enabled(false, egui::Button::new("📑 Relatórios (Em breve)"));
-                    ui.add_enabled(false, egui::Button::new("📆 Calendário (Em breve)"));
-                }
-
-                if permissoes.contains(&AlvoNavegacao::Financeiro) {
-                    ui.add_enabled(
-                        false,
-                        egui::Button::new("📊 Relatórios Financeiros (Em breve)"),
-                    );
-                }
-
-                if permissoes.contains(&AlvoNavegacao::Estoque) {
-                    ui.add_enabled(
-                        false,
-                        egui::Button::new("🔁 Inventário Avançado (Em breve)"),
-                    );
-                }
-
-                if permissoes.contains(&AlvoNavegacao::Admin) {
-                    ui.add_enabled(false, egui::Button::new("⚙️ Configurações (Em breve)"));
-                    ui.add_enabled(false, egui::Button::new("🔌 Integrações (Em breve)"));
-                }
-
-                ui.add_enabled(false, egui::Button::new("🔔 Notificações (Em breve)"));
-                ui.add_enabled(false, egui::Button::new("🆘 Suporte (Em breve)"));
-                ui.add_enabled(false, egui::Button::new("❓ Ajuda (Em breve)"));
             });
 
+            ui.separator();
+
+            // --- [NOVO] INÍCIO DA ÁREA DE ROLAGEM ---
+            // A barra de rolagem aparecerá automaticamente se o conteúdo abaixo for muito grande.
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                // --- GRUPO DE NAVEGAÇÃO PRINCIPAL ---
+                ui.collapsing("🏠 Navegação Principal", |ui| {
+                    // Dashboard
+                    if matches!(
+                        papel_usuario,
+                        PapelUsuario::Administrador
+                            | PapelUsuario::Gerencia
+                            | PapelUsuario::Comercial
+                    ) {
+                        if ui.button("Dashboard").clicked() {
+                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
+                        }
+                    }
+
+                    // Ordens de Serviço
+                    if permissoes.contains(&AlvoNavegacao::Admin)
+                        || permissoes.contains(&AlvoNavegacao::Comercial)
+                        || permissoes.contains(&AlvoNavegacao::Tecnico)
+                    {
+                        if ui.button("📝 Ordens de Serviço").clicked() {
+                            evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Ordens));
+                        }
+                    }
+
+                    // Clientes
+                    if ui.button("👥 Clientes").clicked() {
+                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Clientes));
+                    }
+                });
+
+                // --- GRUPO DE MÓDULOS DE GESTÃO ---
+                ui.collapsing("💼 Módulos de Gestão", |ui| {
+                    if permissoes.contains(&AlvoNavegacao::Admin)
+                        && ui.button("Administrativo").clicked()
+                    {
+                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
+                    }
+                    if permissoes.contains(&AlvoNavegacao::Admin)
+                        && ui.button("🛠️ Serviços").clicked()
+                    {
+                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Servicos));
+                    }
+                    if permissoes.contains(&AlvoNavegacao::Financeiro)
+                        && ui.button("💰 Financeiro").clicked()
+                    {
+                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
+                    }
+                    if permissoes.contains(&AlvoNavegacao::Comercial)
+                        && ui.button("📈 Orçamentos").clicked()
+                    {
+                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Orcamentos));
+                    }
+                    if permissoes.contains(&AlvoNavegacao::Gerencia)
+                        && ui.button("📊 Gerência").clicked()
+                    {
+                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
+                    }
+                    if permissoes.contains(&AlvoNavegacao::Estoque)
+                        && ui.button("📦 Estoque").clicked()
+                    {
+                        evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Estoque));
+                    }
+                });
+
+                // --- GRUPO DE FUNCIONALIDADES FUTURAS ---
+                ui.collapsing("🚀 Funcionalidades Futuras", |ui| {
+                    if permissoes.contains(&AlvoNavegacao::Comercial) {
+                        ui.add_enabled(false, egui::Button::new("Clientes (avançado)"));
+                        ui.add_enabled(false, egui::Button::new("🧾 Vendas"));
+                    }
+                    if permissoes.contains(&AlvoNavegacao::Gerencia)
+                        || permissoes.contains(&AlvoNavegacao::Admin)
+                    {
+                        ui.add_enabled(false, egui::Button::new("📑 Relatórios"));
+                        ui.add_enabled(false, egui::Button::new("📆 Calendário"));
+                    }
+                    if permissoes.contains(&AlvoNavegacao::Financeiro) {
+                        ui.add_enabled(false, egui::Button::new("Relatórios Financeiros"));
+                    }
+                    if permissoes.contains(&AlvoNavegacao::Estoque) {
+                        ui.add_enabled(false, egui::Button::new("Inventário Avançado"));
+                    }
+                    if permissoes.contains(&AlvoNavegacao::Admin) {
+                        ui.add_enabled(false, egui::Button::new("⚙️ Configurações"));
+                        ui.add_enabled(false, egui::Button::new("🔌 Integrações"));
+                    }
+                    ui.add_enabled(false, egui::Button::new("🔔 Notificações"));
+                    ui.add_enabled(false, egui::Button::new("🆘 Suporte"));
+                    ui.add_enabled(false, egui::Button::new("❓ Ajuda"));
+                });
+            });
+            // --- FIM DA ÁREA DE ROLAGEM ---
+
+            // --- SEÇÃO INFERIOR: VERSÃO (fora da área de rolagem para ficar fixa) ---
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                 ui.label(
                     egui::RichText::new(format!("Versão: {}", env!("CARGO_PKG_VERSION")))

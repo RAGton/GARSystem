@@ -132,7 +132,7 @@ impl TelaEstoque {
             .show(ui, |ui| {
                 ui.strong("Cód. Interno");
                 ui.strong("Estoque");
-                ui.strong("Descrição");
+                ui.strong("Nome / Descrição");
                 ui.strong("Preço Venda");
                 ui.strong("Localização");
                 ui.strong("Ações");
@@ -141,12 +141,13 @@ impl TelaEstoque {
                 let filtro = self.filtro_peca.to_lowercase();
                 let lista = { self.lista_pecas.lock().unwrap().clone() };
                 for peca in lista.iter().filter(|p| {
-                    p.descricao.to_lowercase().contains(&filtro)
+                    p.nome.to_lowercase().contains(&filtro)
+                        || p.descricao.to_lowercase().contains(&filtro)
                         || p.codigo_interno.to_lowercase().contains(&filtro)
                 }) {
                     ui.label(&peca.codigo_interno);
                     ui.label(peca.estoque_atual.to_string());
-                    ui.label(&peca.descricao);
+                    ui.label(format!("{} — {}", peca.nome, peca.descricao));
                     ui.label(format!("R$ {:.2}", peca.preco_venda));
                     ui.label(&peca.localizacao);
                     if ui.button("✏️").clicked() {

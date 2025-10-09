@@ -12,4 +12,5 @@ pub mod painel_ordens;
 pub mod painel_os_criar;
 pub mod painel_os_edicao;
 pub mod painel_principal;
+pub mod painel_servicos;
 pub mod painel_tecnico;

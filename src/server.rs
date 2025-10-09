@@ -141,7 +141,6 @@ async fn handler_criar_cliente(
 }
 
 use axum::extract::Path;
-use axum::extract::State;
 
 async fn handler_criar_orcamento(
     Json(payload): Json<Orcamento>,

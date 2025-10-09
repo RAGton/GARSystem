@@ -1,7 +1,7 @@
 // src/telas/painel_os_edicao.rs
 
 use crate::aplicacao::{AppEvent, TelaAtiva};
-use crate::servicos::{Cliente, InfoUsuario, OrdemServico, Peca, PecaOS};
+use crate::servicos::{OrdemServico, Peca, PecaOS};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
@@ -28,6 +28,10 @@ pub struct TelaOsEdicao {
     // UI state
     aba_ativa: AbaOs,
     valor_servico: f64,
+    // Serviços
+    lista_servicos: Vec<crate::servicos::Servico>,
+    servico_selecionado_id: Option<u32>,
+    quantidade_servico: u32,
     // Busca / modais
     abrir_busca_cliente: bool,
     filtro_busca_cliente: String,
@@ -52,6 +56,9 @@ impl TelaOsEdicao {
             quantidade_peca_adicionar: 1,
             aba_ativa: AbaOs::Geral,
             valor_servico: 0.0,
+            lista_servicos: crate::servicos::listar_servicos(),
+            servico_selecionado_id: None,
+            quantidade_servico: 1,
             abrir_busca_cliente: false,
             filtro_busca_cliente: String::new(),
             abrir_busca_tecnico: false,
@@ -470,9 +477,69 @@ impl TelaOsEdicao {
             // Como valor de serviço separado usamos self.valor_servico
             ui.add(egui::DragValue::new(&mut self.valor_servico).speed(0.5));
         });
+        ui.horizontal(|ui| {
+            ui.label("Adicionar serviço:");
+            let nome = self
+                .servico_selecionado_id
+                .and_then(|id| self.lista_servicos.iter().find(|s| s.id == id))
+                .map_or_else(|| "Selecione...".to_string(), |s| s.nome.clone());
+            egui::ComboBox::from_id_salt("seletor_servico")
+                .selected_text(nome)
+                .show_ui(ui, |ui| {
+                    for s in &self.lista_servicos {
+                        ui.selectable_value(&mut self.servico_selecionado_id, Some(s.id), &s.nome);
+                    }
+                });
+            ui.add(egui::DragValue::new(&mut self.quantidade_servico).range(1..=99));
+            if ui.button("Adicionar serviço").clicked() {
+                if let Some(id) = self.servico_selecionado_id {
+                    if let Some(s) = self.lista_servicos.iter().find(|x| x.id == id) {
+                        let svc = crate::servicos::ServicoOS {
+                            id_servico: s.id,
+                            nome: s.nome.clone(),
+                            descricao: s.descricao.clone(),
+                            quantidade: self.quantidade_servico,
+                            preco_unitario: s.preco,
+                            preco_total: s.preco * self.quantidade_servico as f64,
+                        };
+                        self.os_data.servicos.push(svc);
+                        self.recalcular_totais();
+                    }
+                }
+            }
+        });
+
+        egui::Grid::new("grid_servicos_os")
+            .num_columns(5)
+            .show(ui, |ui| {
+                ui.strong("Serviço");
+                ui.strong("Qtd.");
+                ui.strong("Vlr. Unit.");
+                ui.strong("Vlr. Total");
+                ui.strong("Ações");
+                ui.end_row();
+
+                for (idx, s) in self.os_data.servicos.iter_mut().enumerate() {
+                    ui.label(&s.nome);
+                    ui.add(
+                        egui::DragValue::new(&mut s.quantidade)
+                            .speed(1.0)
+                            .range(1..=999),
+                    );
+                    ui.label(format!("R$ {:.2}", s.preco_unitario));
+                    ui.label(format!("R$ {:.2}", s.preco_total));
+                    if ui.button("Remover").clicked() {
+                        self.os_data.servicos.remove(idx);
+                        self.recalcular_totais();
+                        break;
+                    }
+                    ui.end_row();
+                }
+            });
     }
 
     fn recalcular_totais(&mut self) {
         self.os_data.total_pecas = self.os_data.pecas.iter().map(|p| p.preco_total).sum();
+        self.os_data.total_servicos = self.os_data.servicos.iter().map(|s| s.preco_total).sum();
     }
 }

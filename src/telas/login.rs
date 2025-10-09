@@ -23,6 +23,7 @@ pub struct TelaLogin {
     nome_usuario: String,
     senha: String,
     lembrar_usuario: bool,
+    last_lembrar: bool,
     estado: Arc<Mutex<EstadoLogin>>,
     endereco_servidor: Arc<Mutex<String>>,
     ir_para_configuracao: bool,
@@ -39,6 +40,7 @@ impl TelaLogin {
             nome_usuario,
             senha: String::new(),
             lembrar_usuario,
+            last_lembrar: lembrar_usuario,
             estado: Arc::new(Mutex::new(EstadoLogin::Ocioso)),
             endereco_servidor,
             ir_para_configuracao: false,
@@ -195,13 +197,15 @@ impl TelaLogin {
                                                 .password(true),
                                         );
 
-                                        // Adiciona o checkbox
+                                        // Adiciona o checkbox (salva somente quando o usuário alterar)
                                         ui.add_space(10.0);
-                                        ui.checkbox(&mut self.lembrar_usuario, "Lembrar de mim");
-
-                                        // Persistir o estado de lembrar usuário imediatamente no storage
-                                        if let Some(storage) = frame.storage_mut() {
-                                            self.salvar_estado_login(storage);
+                                        let resp = ui
+                                            .checkbox(&mut self.lembrar_usuario, "Lembrar de mim");
+                                        if resp.changed() {
+                                            if let Some(storage) = frame.storage_mut() {
+                                                self.salvar_estado_login(storage);
+                                                self.last_lembrar = self.lembrar_usuario;
+                                            }
                                         }
 
                                         if user_input_response.lost_focus()

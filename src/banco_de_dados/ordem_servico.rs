@@ -77,6 +77,16 @@ pub fn buscar_os_por_id(id: u32) -> Result<OrdemServico, ErroAplicacao> {
         },
     )?;
 
+    // Carregar serviços associados (agora persistidos)
+    match super::servico::listar_servicos_da_os(id) {
+        Ok(list) => os.servicos = list,
+        Err(e) => {
+            eprintln!("Falha ao carregar serviços da OS {}: {}", id, e);
+            os.servicos = Vec::new();
+        }
+    }
+    os.total_servicos = os.servicos.iter().map(|s| s.preco_total).sum();
+
     os.total_pecas = os.pecas.iter().map(|p| p.preco_total).sum();
     Ok(os)
 }
@@ -131,6 +141,8 @@ impl FromRow for OrdemServico {
             historico_edicoes: Vec::new(),
             pecas: Vec::new(),
             total_pecas: 0.0,
+            servicos: Vec::new(),
+            total_servicos: 0.0,
         })
     }
 }
@@ -228,6 +240,17 @@ pub fn atualizar_os(os_novo: &OrdemServico, usuario_logado: &str) -> Result<(), 
             (peca.id_peca, os_novo.id, -(peca.quantidade as i32), estoque_anterior, estoque_novo, usuario_logado)
         )?;
     }
+    // Gravar serviços associados dentro da mesma transação para atomicidade
+    tx.exec_drop(
+        "DELETE FROM ordem_servico_servicos WHERE ordem_servico_id = :id",
+        params! { "id" => os_novo.id },
+    )?;
+    for s in &os_novo.servicos {
+        tx.exec_drop(
+            "INSERT INTO ordem_servico_servicos (ordem_servico_id, servico_id, quantidade, preco_unitario) VALUES (?, ?, ?, ?)",
+            (os_novo.id, s.id_servico, s.quantidade, s.preco_unitario),
+        )?;
+    }
 
     tx.commit()?;
     Ok(())
@@ -241,30 +264,39 @@ pub fn criar_os(os: &mut OrdemServico) -> Result<u32, ErroAplicacao> {
     // Primeiro, tentamos resolver/insrir cliente e equipamento minimalmente.
     // Aqui assumimos que `clientes` e `equipamentos` já existem ou são criados externamente.
     // Para simplicidade, vamos inserir um cliente se não existir (nome fornecido).
-    let cliente_id: i32 = tx.exec_first(
-        "SELECT id FROM clientes WHERE nome = ?",
-        (os.cliente.clone(),),
-    )?.map(|(id,)| id).unwrap_or_else(|| {
-        let res = tx.exec_drop(
-            "INSERT INTO clientes (nome, telefone) VALUES (?, ?)",
-            (os.cliente.clone(), os.telefone_cliente.clone()),
-        );
-        // pega o último id
-        let id = tx.last_insert_id().unwrap_or(0) as i32;
-        id
-    });
+    let cliente_id: i32 = tx
+        .exec_first(
+            "SELECT id FROM clientes WHERE nome = ?",
+            (os.cliente.clone(),),
+        )?
+        .map(|(id,)| id)
+        .unwrap_or_else(|| {
+            let _ = tx.exec_drop(
+                "INSERT INTO clientes (nome, telefone) VALUES (?, ?)",
+                (os.cliente.clone(), os.telefone_cliente.clone()),
+            );
+            // pega o último id
+            tx.last_insert_id().unwrap_or(0) as i32
+        });
 
     // Para equipamento, faremos uma inserção simples se não houver número de série.
-    let equipamento_id: i32 = tx.exec_first(
-        "SELECT id FROM equipamentos WHERE numero_serie = ?",
-        (os.numero_serie_equipamento.clone(),),
-    )?.map(|(id,)| id).unwrap_or_else(|| {
-        let res = tx.exec_drop(
-            "INSERT INTO equipamentos (cliente_id, descricao, numero_serie) VALUES (?, ?, ?)",
-            (cliente_id, os.equipamento.clone(), os.numero_serie_equipamento.clone()),
-        );
-        tx.last_insert_id().unwrap_or(0) as i32
-    });
+    let equipamento_id: i32 = tx
+        .exec_first(
+            "SELECT id FROM equipamentos WHERE numero_serie = ?",
+            (os.numero_serie_equipamento.clone(),),
+        )?
+        .map(|(id,)| id)
+        .unwrap_or_else(|| {
+            let _ = tx.exec_drop(
+                "INSERT INTO equipamentos (cliente_id, descricao, numero_serie) VALUES (?, ?, ?)",
+                (
+                    cliente_id,
+                    os.equipamento.clone(),
+                    os.numero_serie_equipamento.clone(),
+                ),
+            );
+            tx.last_insert_id().unwrap_or(0) as i32
+        });
 
     tx.exec_drop(
         "INSERT INTO ordens_servico (cliente_id, equipamento_id, defeito_relatado, observacoes, parecer_tecnico, status, situacao, atendente, tecnico_responsavel, prazo_entrega) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -292,10 +324,28 @@ pub fn criar_os(os: &mut OrdemServico) -> Result<u32, ErroAplicacao> {
         )?;
 
         // Atualiza estoque
-        let estoque_anterior: i32 = tx.exec_first("SELECT estoque_atual FROM pecas WHERE id = ?", (p.id_peca,))?.map(|(v,)| v).unwrap_or(0);
+        let estoque_anterior: i32 = tx
+            .exec_first("SELECT estoque_atual FROM pecas WHERE id = ?", (p.id_peca,))?
+            .map(|(v,)| v)
+            .unwrap_or(0);
         let estoque_novo = estoque_anterior - p.quantidade as i32;
-        tx.exec_drop("UPDATE pecas SET estoque_atual = ? WHERE id = ?", (estoque_novo, p.id_peca))?;
+        tx.exec_drop(
+            "UPDATE pecas SET estoque_atual = ? WHERE id = ?",
+            (estoque_novo, p.id_peca),
+        )?;
         tx.exec_drop(r#"INSERT INTO movimentos_estoque (peca_id, tipo_movimento, referencia_id, quantidade_movimentada, estoque_anterior, estoque_novo, usuario) VALUES (?, 'Saída OS', ?, ?, ?, ?, ?)"#, (p.id_peca, novo_id, -(p.quantidade as i32), estoque_anterior, estoque_novo, "system"))?;
+    }
+
+    // Gravar serviços associados dentro da mesma transação
+    tx.exec_drop(
+        "DELETE FROM ordem_servico_servicos WHERE ordem_servico_id = :id",
+        params! { "id" => novo_id },
+    )?;
+    for s in &os.servicos {
+        tx.exec_drop(
+            "INSERT INTO ordem_servico_servicos (ordem_servico_id, servico_id, quantidade, preco_unitario) VALUES (?, ?, ?, ?)",
+            (novo_id, s.id_servico, s.quantidade, s.preco_unitario),
+        )?;
     }
 
     tx.commit()?;

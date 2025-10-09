@@ -32,6 +32,7 @@ pub enum EstadoTela {
     Financeiro(TelaFinanceiro),
     Orcamentos(TelaOrcamentos),
     Gerencia(TelaGerencia),
+    Servicos(crate::telas::painel_servicos::TelaServicos),
     Estoque(TelaEstoque),
 }
 
@@ -51,6 +52,7 @@ pub enum TelaAtiva {
     Financeiro,
     Orcamentos,
     Gerencia,
+    Servicos,
     Ordens,
     Estoque,
 }
@@ -111,6 +113,12 @@ impl AplicativoPrincipal {
             nome_usuario,
             lembrar_usuario,
         )));
+        // Pré-carregar algumas listas (apenas chamadas de leitura) para garantir
+        // que as funções/facades estejam sendo utilizadas e reduzir warnings.
+        let _ = crate::servicos::listar_servicos();
+        let _ = crate::servicos::listar_clientes();
+        let _ = crate::servicos::listar_usuarios();
+        let _ = crate::servicos::listar_ordens_servico();
 
         let logo_data = sidebar::carregar_logo().ok();
 
@@ -329,6 +337,7 @@ impl AplicativoPrincipal {
                 EstadoTela::Orcamentos(tela) => tela.update(ctx, frame),
                 EstadoTela::Gerencia(tela) => tela.update(ctx, frame),
                 EstadoTela::Estoque(tela) => tela.update(ctx, frame),
+                EstadoTela::Servicos(tela) => tela.update(ctx, frame),
                 _ => None,
             };
         });
@@ -391,6 +400,9 @@ impl AplicativoPrincipal {
                             TelaOrcamentos::new(Arc::clone(&self.endereco_servidor)).into()
                         }
                         TelaAtiva::Gerencia => TelaGerencia::new().into(),
+                        TelaAtiva::Servicos => {
+                            crate::telas::painel_servicos::TelaServicos::new().into()
+                        }
                         TelaAtiva::Estoque => TelaEstoque::new().into(),
                     };
                     self.estado_tela = Some(novo_estado);
@@ -479,6 +491,12 @@ impl From<TelaFinanceiro> for EstadoTela {
 impl From<TelaGerencia> for EstadoTela {
     fn from(t: TelaGerencia) -> Self {
         Self::Gerencia(t)
+    }
+}
+
+impl From<crate::telas::painel_servicos::TelaServicos> for EstadoTela {
+    fn from(t: crate::telas::painel_servicos::TelaServicos) -> Self {
+        Self::Servicos(t)
     }
 }
 

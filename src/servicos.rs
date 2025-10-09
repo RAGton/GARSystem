@@ -96,6 +96,7 @@ pub struct Cliente {
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
 pub struct Peca {
     pub id: u32,
+    pub nome: String,
     pub codigo_interno: String,
     pub part_number: String,
     pub descricao: String,
@@ -105,6 +106,46 @@ pub struct Peca {
     pub estoque_minimo: i32,
     pub preco_custo: f64,
     pub preco_venda: f64,
+}
+
+// Servico básico mantido em memória (sem persistência no banco por enquanto)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Servico {
+    pub id: u32,
+    pub nome: String,
+    pub descricao: String,
+    pub preco: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ServicoOS {
+    pub id_servico: u32,
+    pub nome: String,
+    pub descricao: String,
+    pub quantidade: u32,
+    pub preco_unitario: f64,
+    pub preco_total: f64,
+}
+
+// Persistência de serviços: delega ao módulo de banco_de_dados
+pub fn listar_servicos() -> Vec<Servico> {
+    match crate::banco_de_dados::listar_servicos_db() {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("Erro ao listar serviços do banco: {}", e);
+            Vec::new()
+        }
+    }
+}
+
+pub fn criar_servico(s: &Servico) -> u32 {
+    match crate::banco_de_dados::criar_servico_db(s) {
+        Ok(id) => id,
+        Err(e) => {
+            eprintln!("Erro ao criar serviço no banco: {}", e);
+            0
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -153,6 +194,8 @@ pub struct OrdemServico {
     pub historico_edicoes: Vec<HistoricoEdicao>,
     pub pecas: Vec<PecaOS>,
     pub total_pecas: f64,
+    pub servicos: Vec<ServicoOS>,
+    pub total_servicos: f64,
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, Serialize, Deserialize)]
