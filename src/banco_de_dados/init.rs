@@ -71,7 +71,7 @@ fn verificar_e_migrar_se_necessario(conn: &mut PooledConn) -> Result<bool, mysql
                 (),
             )?;
             tx.exec_drop(
-                "ALTER TABLE users MODIFY COLUMN role ENUM('Administrador', 'Gerencia', 'Tecnico', 'Financeiro', 'Comercial') NOT NULL DEFAULT 'Comercial'",
+                "ALTER TABLE users MODIFY COLUMN role ENUM('Administrador', 'Gerencia', 'Tecnico', 'Financeiro', 'Comercial', 'Estoquista') NOT NULL DEFAULT 'Comercial'",
                 (),
             )?;
             tx.commit()?;
@@ -87,7 +87,7 @@ fn criar_tabela_e_admin_padrao(conn: &mut PooledConn) -> Result<(), mysql::Error
             id INT AUTO_INCREMENT PRIMARY KEY,
             username VARCHAR(255) NOT NULL UNIQUE,
             password_hash VARCHAR(255) NOT NULL,
-            role ENUM('Administrador', 'Gerencia', 'Tecnico', 'Financeiro', 'Comercial') NOT NULL DEFAULT 'Comercial'
+            role ENUM('Administrador', 'Gerencia', 'Tecnico', 'Financeiro', 'Comercial', 'Estoquista') NOT NULL DEFAULT 'Comercial'
         )",
     )?;
     Ok(())
