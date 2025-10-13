@@ -47,6 +47,10 @@ impl TelaLogin {
         }
     }
 
+    pub fn nome_usuario_atual(&self) -> &str {
+        &self.nome_usuario
+    }
+
     // Novo método para salvar o estado
     pub fn salvar_estado_login(&self, storage: &mut dyn eframe::Storage) {
         storage.set_string("lembrar_usuario", self.lembrar_usuario.to_string());

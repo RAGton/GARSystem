@@ -4,31 +4,34 @@ use mysql::FromRowError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error; // Necessário para a conversão de erros
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone, Copy)]
 pub enum StatusOS {
     Aberta,
+    Orcamento,
+    Aprovada,
     EmAndamento,
     AguardandoPeca,
     Finalizada,
     Cancelada,
 }
 
-// Sua adição foi mantida
 impl StatusOS {
-    pub fn iter() -> impl Iterator<Item = Self> {
+    pub fn iter() -> impl Iterator<Item = StatusOS> {
         [
             StatusOS::Aberta,
+            StatusOS::Orcamento,
+            StatusOS::Aprovada,
             StatusOS::EmAndamento,
             StatusOS::AguardandoPeca,
             StatusOS::Finalizada,
             StatusOS::Cancelada,
         ]
         .iter()
-        .cloned()
+        .copied()
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, Eq)]
 pub enum SituacaoOS {
     Orcamento,
     Aprovado,
@@ -42,7 +45,6 @@ pub enum SituacaoOS {
     Faturado,
 }
 
-// Sua adição foi mantida
 impl SituacaoOS {
     pub fn iter() -> impl Iterator<Item = Self> {
         [
@@ -128,8 +130,12 @@ pub struct ServicoOS {
 }
 
 // Persistência de serviços: delega ao módulo de banco_de_dados
+pub fn listar_servicos_db() -> Result<Vec<Servico>, ErroAplicacao> {
+    crate::banco_de_dados::servico::listar_servicos()
+}
+
 pub fn listar_servicos() -> Vec<Servico> {
-    match crate::banco_de_dados::listar_servicos_db() {
+    match listar_servicos_db() {
         Ok(v) => v,
         Err(e) => {
             eprintln!("Erro ao listar serviços do banco: {}", e);
@@ -138,14 +144,22 @@ pub fn listar_servicos() -> Vec<Servico> {
     }
 }
 
+pub fn criar_servico_db(s: &Servico) -> Result<u32, ErroAplicacao> {
+    crate::banco_de_dados::servico::criar_servico(s)
+}
+
 pub fn criar_servico(s: &Servico) -> u32 {
-    match crate::banco_de_dados::criar_servico_db(s) {
+    match criar_servico_db(s) {
         Ok(id) => id,
         Err(e) => {
             eprintln!("Erro ao criar serviço no banco: {}", e);
             0
         }
     }
+}
+
+pub fn listar_pecas() -> Result<Vec<Peca>, ErroAplicacao> {
+    crate::banco_de_dados::estoque::listar_pecas()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,6 +210,34 @@ pub struct OrdemServico {
     pub total_pecas: f64,
     pub servicos: Vec<ServicoOS>,
     pub total_servicos: f64,
+}
+
+impl OrdemServico {
+    /// Cria uma OrdemServico placeholder enquanto o carregamento do servidor não retorna
+    pub fn placeholder(id: u32) -> Self {
+        OrdemServico {
+            id,
+            cliente: String::new(),
+            equipamento: String::new(),
+            defeito_relatado: String::new(),
+            status: StatusOS::Aberta,
+            parecer_tecnico: String::new(),
+            situacao: SituacaoOS::Orcamento,
+            numero_serie_equipamento: String::new(),
+            observacoes: String::new(),
+            nome_tecnico_responsavel: String::new(),
+            atendente: String::new(),
+            horario_abertura: String::new(),
+            telefone_cliente: String::new(),
+            data_chegada: String::new(),
+            prazo_entrega: String::new(),
+            historico_edicoes: Vec::new(),
+            pecas: Vec::new(),
+            total_pecas: 0.0,
+            servicos: Vec::new(),
+            total_servicos: 0.0,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy, Hash, Eq, Serialize, Deserialize)]
