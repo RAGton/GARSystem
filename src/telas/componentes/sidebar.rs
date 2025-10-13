@@ -2,7 +2,6 @@
 
 use crate::aplicacao::{AppEvent, TelaAtiva};
 use crate::servicos::PapelUsuario;
-use crate::telas::painel_principal::AlvoNavegacao;
 use eframe::egui::{self, ColorImage, TextureHandle};
 use std::collections::HashSet;
 
@@ -18,34 +17,41 @@ pub fn carregar_logo() -> Result<ColorImage, image::ImageError> {
     ))
 }
 
-fn montar_permissoes(papel_usuario: PapelUsuario) -> HashSet<AlvoNavegacao> {
+fn montar_permissoes(papel_usuario: PapelUsuario) -> HashSet<TelaAtiva> {
     let mut permissoes = HashSet::new();
     use PapelUsuario::*;
     match papel_usuario {
         Administrador => {
             permissoes.extend([
-                AlvoNavegacao::Admin,
-                AlvoNavegacao::Tecnico,
-                AlvoNavegacao::Financeiro,
-                AlvoNavegacao::Comercial,
-                AlvoNavegacao::Gerencia,
-                AlvoNavegacao::Estoque,
+                TelaAtiva::Admin,
+                TelaAtiva::Tecnico,
+                TelaAtiva::Financeiro,
+                TelaAtiva::Orcamentos,
+                TelaAtiva::Gerencia,
+                TelaAtiva::Estoque,
+                TelaAtiva::Clientes,
+                TelaAtiva::Ordens,
+                TelaAtiva::Servicos,
             ]);
         }
         Tecnico => {
-            permissoes.insert(AlvoNavegacao::Tecnico);
+            permissoes.insert(TelaAtiva::Tecnico);
+            permissoes.insert(TelaAtiva::Ordens);
         }
         Financeiro => {
-            permissoes.insert(AlvoNavegacao::Financeiro);
+            permissoes.insert(TelaAtiva::Financeiro);
+            permissoes.insert(TelaAtiva::Clientes);
         }
         Comercial => {
-            permissoes.insert(AlvoNavegacao::Comercial);
+            permissoes.insert(TelaAtiva::Orcamentos);
+            permissoes.insert(TelaAtiva::Clientes);
         }
         Gerencia => {
-            permissoes.insert(AlvoNavegacao::Gerencia);
+            permissoes.insert(TelaAtiva::Gerencia);
+            permissoes.insert(TelaAtiva::Ordens);
         }
         Estoquista => {
-            permissoes.insert(AlvoNavegacao::Estoque);
+            permissoes.insert(TelaAtiva::Estoque);
         }
     }
     permissoes
@@ -93,9 +99,9 @@ pub fn mostrar(
                     }
 
                     // Ordens de Serviço
-                    if permissoes.contains(&AlvoNavegacao::Admin)
-                        || permissoes.contains(&AlvoNavegacao::Comercial)
-                        || permissoes.contains(&AlvoNavegacao::Tecnico)
+                    if permissoes.contains(&TelaAtiva::Admin)
+                        || permissoes.contains(&TelaAtiva::Orcamentos)
+                        || permissoes.contains(&TelaAtiva::Tecnico)
                     {
                         if ui.button("📝 Ordens de Serviço").clicked() {
                             evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Ordens));
@@ -110,33 +116,31 @@ pub fn mostrar(
 
                 // --- GRUPO DE MÓDULOS DE GESTÃO ---
                 ui.collapsing("💼 Módulos de Gestão", |ui| {
-                    if permissoes.contains(&AlvoNavegacao::Admin)
+                    if permissoes.contains(&TelaAtiva::Admin)
                         && ui.button("Administrativo").clicked()
                     {
                         evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
                     }
-                    if permissoes.contains(&AlvoNavegacao::Admin)
-                        && ui.button("🛠️ Serviços").clicked()
+                    if permissoes.contains(&TelaAtiva::Admin) && ui.button("🛠️ Serviços").clicked()
                     {
                         evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Servicos));
                     }
-                    if permissoes.contains(&AlvoNavegacao::Financeiro)
+                    if permissoes.contains(&TelaAtiva::Financeiro)
                         && ui.button("💰 Financeiro").clicked()
                     {
                         evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Financeiro));
                     }
-                    if permissoes.contains(&AlvoNavegacao::Comercial)
+                    if permissoes.contains(&TelaAtiva::Orcamentos)
                         && ui.button("📈 Orçamentos").clicked()
                     {
                         evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Orcamentos));
                     }
-                    if permissoes.contains(&AlvoNavegacao::Gerencia)
+                    if permissoes.contains(&TelaAtiva::Gerencia)
                         && ui.button("📊 Gerência").clicked()
                     {
                         evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Gerencia));
                     }
-                    if permissoes.contains(&AlvoNavegacao::Estoque)
-                        && ui.button("📦 Estoque").clicked()
+                    if permissoes.contains(&TelaAtiva::Estoque) && ui.button("📦 Estoque").clicked()
                     {
                         evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Estoque));
                     }
@@ -144,23 +148,23 @@ pub fn mostrar(
 
                 // --- GRUPO DE FUNCIONALIDADES FUTURAS ---
                 ui.collapsing("🚀 Funcionalidades Futuras", |ui| {
-                    if permissoes.contains(&AlvoNavegacao::Comercial) {
+                    if permissoes.contains(&TelaAtiva::Orcamentos) {
                         ui.add_enabled(false, egui::Button::new("Clientes (avançado)"));
                         ui.add_enabled(false, egui::Button::new("🧾 Vendas"));
                     }
-                    if permissoes.contains(&AlvoNavegacao::Gerencia)
-                        || permissoes.contains(&AlvoNavegacao::Admin)
+                    if permissoes.contains(&TelaAtiva::Gerencia)
+                        || permissoes.contains(&TelaAtiva::Admin)
                     {
                         ui.add_enabled(false, egui::Button::new("📑 Relatórios"));
                         ui.add_enabled(false, egui::Button::new("📆 Calendário"));
                     }
-                    if permissoes.contains(&AlvoNavegacao::Financeiro) {
+                    if permissoes.contains(&TelaAtiva::Financeiro) {
                         ui.add_enabled(false, egui::Button::new("Relatórios Financeiros"));
                     }
-                    if permissoes.contains(&AlvoNavegacao::Estoque) {
+                    if permissoes.contains(&TelaAtiva::Estoque) {
                         ui.add_enabled(false, egui::Button::new("Inventário Avançado"));
                     }
-                    if permissoes.contains(&AlvoNavegacao::Admin) {
+                    if permissoes.contains(&TelaAtiva::Admin) {
                         ui.add_enabled(false, egui::Button::new("⚙️ Configurações"));
                         ui.add_enabled(false, egui::Button::new("🔌 Integrações"));
                     }

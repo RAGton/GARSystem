@@ -1,635 +1,832 @@
 // src/telas/painel_os_edicao.rs
 
 use crate::aplicacao::{AppEvent, TelaAtiva};
-use crate::servicos::{OrdemServico, Peca, PecaOS};
-use eframe::egui;
+use crate::servicos::{
+    InfoUsuario, OrdemServico, Peca, PecaOS, Servico, ServicoOS, SituacaoOS, StatusOS,
+};
+use eframe::egui::{self, RichText, Ui};
+use egui_extras::{Column, TableBuilder};
+use serde::Serialize;
 use std::sync::{Arc, Mutex};
 
-// Abas internas da tela de edição de OS
+// Abas para organizar a UI
 #[derive(PartialEq, Eq, Clone, Copy)]
-pub enum AbaOs {
-    Geral,
+enum AbaDetalhesOS {
     Produtos,
     Servicos,
-    Devolucoes,
-    Despesas,
-    Outras,
+    Historico,
 }
 
-// A struct que guarda o estado da tela de edição.
+// Estado para gerenciar carregamento de dados da rede
+#[derive(Clone)]
+enum EstadoCarregamento<T> {
+    Ocioso,
+    Carregando,
+    Pronto(Vec<T>),
+    Erro(String),
+}
+
+impl<T> Default for EstadoCarregamento<T> {
+    fn default() -> Self {
+        Self::Ocioso
+    }
+}
+
+// Payload para a requisição de atualização da OS
+#[derive(Serialize)]
+struct AtualizarOrdemPayload {
+    os: OrdemServico,
+    usuario: String,
+}
+
 pub struct TelaOsEdicao {
-    os_data: OrdemServico,
+    // --- Dependências e Estado Geral ---
+    os_id: u32,
     usuario_logado: String,
-    // Estado para o seletor de peças
-    lista_pecas_estoque: Vec<Peca>,
-    filtro_peca_selecao: String,
-    peca_selecionada_id: Option<u32>,
-    quantidade_peca_adicionar: u32,
-    // UI state
-    aba_ativa: AbaOs,
-    valor_servico: f64,
-    // Serviços
-    lista_servicos: Vec<crate::servicos::Servico>,
-    servico_selecionado_id: Option<u32>,
-    quantidade_servico: u32,
-    // Busca / modais
-    abrir_busca_cliente: bool,
-    filtro_busca_cliente: String,
-    abrir_busca_tecnico: bool,
-    filtro_busca_tecnico: String,
-    abrir_busca_tipo: bool,
-    filtro_busca_tipo: String,
-    // Loaders em background para evitar travar a UI
-    os_loader: Arc<Mutex<Option<OrdemServico>>>,
-    pecas_loader: Arc<Mutex<Option<Vec<Peca>>>>,
-    servicos_loader: Arc<Mutex<Option<Vec<crate::servicos::Servico>>>>,
+    endereco_servidor: Arc<Mutex<String>>,
+    tx_evento: std::sync::mpsc::Sender<AppEvent>,
+
+    // --- Estado da OS e Salvar ---
+    estado_os: Arc<Mutex<Option<Result<OrdemServico, String>>>>,
+    os_editada: OrdemServico, // Cópia local para edição
+    salvando: bool,
+    resultado_salvar: Arc<Mutex<Option<Result<(), String>>>>,
+    notificacao: Option<(String, egui::Color32)>, // (mensagem, cor)
+
+    // --- Estado das Abas e Listas ---
+    aba_ativa: AbaDetalhesOS,
+    lista_pecas_estoque: Arc<Mutex<EstadoCarregamento<Peca>>>,
+    lista_servicos_catalogo: Arc<Mutex<EstadoCarregamento<Servico>>>,
+    lista_tecnicos: Arc<Mutex<EstadoCarregamento<InfoUsuario>>>,
+
+    // --- Campos de Busca e Interação ---
+    filtro_peca: String,
+    filtro_servico: String,
+    filtro_tecnico: String,
+    mostrar_modal_tecnico: bool,
 }
 
 impl TelaOsEdicao {
-    // O construtor recebe o ID da OS que precisa ser editada.
-    pub fn new(os_id: u32, _endereco_servidor: Arc<Mutex<String>>) -> Self {
-        // Placeholder inicial enquanto carregamos em background
-        let placeholder = OrdemServico {
-            id: os_id,
-            cliente: String::new(),
-            equipamento: String::new(),
-            defeito_relatado: String::new(),
-            status: crate::servicos::StatusOS::Aberta,
-            parecer_tecnico: String::new(),
-            situacao: crate::servicos::SituacaoOS::Orcamento,
-            numero_serie_equipamento: String::new(),
-            observacoes: String::new(),
-            nome_tecnico_responsavel: String::new(),
-            atendente: String::new(),
-            horario_abertura: String::new(),
-            telefone_cliente: String::new(),
-            data_chegada: String::new(),
-            prazo_entrega: String::new(),
-            historico_edicoes: Vec::new(),
-            pecas: Vec::new(),
-            total_pecas: 0.0,
-            servicos: Vec::new(),
-            total_servicos: 0.0,
+    pub fn new(
+        os_id: u32,
+        endereco_servidor: Arc<Mutex<String>>,
+        usuario_logado: String,
+        tx_evento: std::sync::mpsc::Sender<AppEvent>,
+    ) -> Self {
+        let mut tela = Self {
+            os_id,
+            usuario_logado,
+            endereco_servidor,
+            tx_evento,
+            estado_os: Arc::new(Mutex::new(None)),
+            os_editada: OrdemServico::placeholder(os_id),
+            salvando: false,
+            resultado_salvar: Arc::new(Mutex::new(None)),
+            notificacao: None,
+            aba_ativa: AbaDetalhesOS::Produtos,
+            lista_pecas_estoque: Arc::new(Mutex::new(EstadoCarregamento::Ocioso)),
+            lista_servicos_catalogo: Arc::new(Mutex::new(EstadoCarregamento::Ocioso)),
+            lista_tecnicos: Arc::new(Mutex::new(EstadoCarregamento::Ocioso)),
+            filtro_peca: String::new(),
+            filtro_servico: String::new(),
+            filtro_tecnico: String::new(),
+            mostrar_modal_tecnico: false,
         };
 
-        let os_loader: Arc<Mutex<Option<OrdemServico>>> = Arc::new(Mutex::new(None));
-        let pecas_loader: Arc<Mutex<Option<Vec<Peca>>>> = Arc::new(Mutex::new(None));
-        let servicos_loader: Arc<Mutex<Option<Vec<crate::servicos::Servico>>>> =
-            Arc::new(Mutex::new(None));
-
-        // Carregar OS em background
-        let os_loader_cl = Arc::clone(&os_loader);
-        crate::executor::spawn(move || match crate::servicos::buscar_os_por_id(os_id) {
-            Ok(os) => {
-                if let Ok(mut g) = os_loader_cl.lock() {
-                    *g = Some(os);
-                }
-            }
-            Err(e) => eprintln!("Falha ao carregar OS {}: {}", os_id, e),
-        });
-
-        // Carregar peças em background
-        let pecas_loader_cl = Arc::clone(&pecas_loader);
-        crate::executor::spawn(move || {
-            let lista = crate::banco_de_dados::estoque::listar_pecas().unwrap_or_default();
-            if let Ok(mut g) = pecas_loader_cl.lock() {
-                *g = Some(lista);
-            }
-        });
-
-        // Carregar serviços em background
-        let servicos_loader_cl = Arc::clone(&servicos_loader);
-        crate::executor::spawn(move || {
-            let lista = crate::servicos::listar_servicos();
-            if let Ok(mut g) = servicos_loader_cl.lock() {
-                *g = Some(lista);
-            }
-        });
-
-        Self {
-            os_data: placeholder,
-            usuario_logado: "admin".to_string(),
-            lista_pecas_estoque: Vec::new(),
-            filtro_peca_selecao: String::new(),
-            peca_selecionada_id: None,
-            quantidade_peca_adicionar: 1,
-            aba_ativa: AbaOs::Geral,
-            valor_servico: 0.0,
-            lista_servicos: Vec::new(),
-            servico_selecionado_id: None,
-            quantidade_servico: 1,
-            abrir_busca_cliente: false,
-            filtro_busca_cliente: String::new(),
-            abrir_busca_tecnico: false,
-            filtro_busca_tecnico: String::new(),
-            abrir_busca_tipo: false,
-            filtro_busca_tipo: String::new(),
-            os_loader,
-            pecas_loader,
-            servicos_loader,
-        }
+        tela.carregar_dados_iniciais();
+        tela
     }
 
-    // O update desta tela também retorna um evento para a aplicação principal.
-    pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
-        let mut evento_emitido = None;
+    fn carregar_dados_iniciais(&mut self) {
+        self.disparar_carregamento_os();
+        self.disparar_carregamento_pecas();
+        self.disparar_carregamento_servicos();
+        self.disparar_carregamento_tecnicos();
+    }
 
-        // Incorporar dados carregados em background, se disponíveis
-        let mut refresh = false;
-        if let Ok(mut g) = self.os_loader.lock() {
-            if let Some(os) = g.take() {
-                self.os_data = os;
-                refresh = true;
-            }
-        }
-        if self.lista_pecas_estoque.is_empty() {
-            if let Ok(mut g) = self.pecas_loader.lock() {
-                if let Some(lista) = g.take() {
-                    self.lista_pecas_estoque = lista;
-                    refresh = true;
-                }
-            }
-        }
-        if self.lista_servicos.is_empty() {
-            if let Ok(mut g) = self.servicos_loader.lock() {
-                if let Some(lista) = g.take() {
-                    self.lista_servicos = lista;
-                    refresh = true;
-                }
-            }
-        }
-        if refresh {
-            ctx.request_repaint();
-        }
+    pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
+        self.processar_resultados_carregamento(ctx);
+
+        let mut app_event = None;
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Top toolbar (ícones - OK/Cancelar)
-            ui.horizontal(|ui| {
-                if ui.button("🖶 Salvar").clicked() {
-                    match crate::servicos::atualizar_os(&self.os_data, &self.usuario_logado) {
-                        Ok(_) => println!("OS {} salva com sucesso!", self.os_data.id),
-                        Err(e) => eprintln!("Erro ao salvar OS {}: {}", self.os_data.id, e),
-                    }
-                }
-                if ui.button("✖ Cancelar").clicked() {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(format!("Nº OS: {}", self.os_data.id));
-                });
+            ui.vertical_centered(|ui| {
+                ui.heading(format!("Detalhes da Ordem de Serviço #{}", self.os_id));
             });
+            ui.add_space(10.0);
 
+            self.desenhar_toolbar(ui, &mut app_event);
             ui.separator();
 
-            // Conteúdo principal com duas colunas
+            if let Some((msg, cor)) = &self.notificacao {
+                ui.label(RichText::new(msg).color(*cor));
+            }
+
             egui::ScrollArea::vertical().show(ui, |ui| {
-                ui.horizontal(|ui| {
-                    // Coluna esquerda: Geral
-                    ui.vertical(|ui| {
-                        ui.group(|ui| {
-                            ui.heading("Geral");
-                            ui.horizontal(|ui| {
-                                ui.vertical(|ui| {
-                                    ui.label("Solicitante / Atendente");
-                                    ui.text_edit_singleline(&mut self.os_data.atendente);
-                                    ui.label("Prev. Entrega");
-                                    ui.text_edit_singleline(&mut self.os_data.prazo_entrega);
-                                    ui.label("Hora Entrega");
-                                    ui.text_edit_singleline(&mut self.os_data.horario_abertura);
-                                });
-                                ui.vertical(|ui| {
-                                    ui.label("Solicitação");
-                                    ui.text_edit_multiline(&mut self.os_data.observacoes);
-                                });
-                            });
-                        });
+                self.desenhar_dados_gerais(ui);
+                ui.add_space(15.0);
+                self.desenhar_seletor_abas(ui);
+                ui.add_space(10.0);
 
-                        ui.add_space(8.0);
-
-                        // Abas simuladas
-                        ui.horizontal(|ui| {
-                            ui.selectable_value(&mut self.aba_ativa, AbaOs::Produtos, "Produtos");
-                            ui.selectable_value(
-                                &mut self.aba_ativa,
-                                AbaOs::Servicos,
-                                "Serviços/Mão de Obra",
-                            );
-                            ui.selectable_value(
-                                &mut self.aba_ativa,
-                                AbaOs::Devolucoes,
-                                "Devoluções",
-                            );
-                            ui.selectable_value(
-                                &mut self.aba_ativa,
-                                AbaOs::Despesas,
-                                "Despesas/Serv.Terceiros",
-                            );
-                            ui.selectable_value(
-                                &mut self.aba_ativa,
-                                AbaOs::Outras,
-                                "Outras Informações",
-                            );
-                        });
-
-                        ui.add_space(6.0);
-
-                        // Conteúdo das abas (usar blocos para garantir retorno `()` em todos os braços)
-                        match self.aba_ativa {
-                            AbaOs::Produtos => {
-                                self.ui_pecas_servicos(ui);
-                            }
-                            AbaOs::Servicos => {
-                                self.ui_servicos(ui);
-                            }
-                            AbaOs::Devolucoes => {
-                                ui.label("Nenhuma devolução registrada.");
-                            }
-                            AbaOs::Despesas => {
-                                ui.label("Nenhuma despesa registrada.");
-                            }
-                            AbaOs::Outras => {
-                                ui.label("Informações adicionais...");
-                            }
-                            AbaOs::Geral => {
-                                // nada a fazer
-                            }
-                        }
-                    });
-
-                    // Coluna direita: informações do cliente, técnico e valores
-                    ui.vertical(|ui| {
-                        ui.group(|ui| {
-                            ui.heading("Informações");
-
-                            ui.horizontal(|ui| {
-                                ui.vertical(|ui| {
-                                    ui.label("Cliente:");
-                                    ui.text_edit_singleline(&mut self.os_data.cliente);
-                                });
-                                // lupa conectada ao campo
-                                if ui
-                                    .add_sized([28.0, 24.0], egui::Button::new("🔍"))
-                                    .clicked()
-                                {
-                                    self.abrir_busca_cliente = true;
-                                }
-                            });
-
-                            ui.label(format!("Telefone: {}", self.os_data.telefone_cliente));
-
-                            ui.horizontal(|ui| {
-                                ui.vertical(|ui| {
-                                    ui.label("Técnico:");
-                                    ui.text_edit_singleline(
-                                        &mut self.os_data.nome_tecnico_responsavel,
-                                    );
-                                });
-                                if ui
-                                    .add_sized([28.0, 24.0], egui::Button::new("🔍"))
-                                    .clicked()
-                                {
-                                    self.abrir_busca_tecnico = true;
-                                }
-                            });
-
-                            ui.separator();
-
-                            ui.label("Condição de Pagamento / Tipo OS");
-                            ui.vertical(|ui| {
-                                ui.text_edit_singleline(&mut self.os_data.observacoes);
-                                // botão de busca embaixo do campo tipo (conectado)
-                                if ui
-                                    .add_sized([80.0, 22.0], egui::Button::new("🔍 Buscar Tipo"))
-                                    .clicked()
-                                {
-                                    self.abrir_busca_tipo = true;
-                                }
-                            });
-                        });
-
-                        ui.add_space(8.0);
-
-                        ui.group(|ui| {
-                            ui.heading("Valores");
-                            ui.horizontal(|ui| {
-                                ui.label("Valor Peças:");
-                                ui.strong(format!("R$ {:.2}", self.os_data.total_pecas));
-                            });
-                            ui.horizontal(|ui| {
-                                ui.label("Valor Serviço:");
-                                ui.add(egui::DragValue::new(&mut self.valor_servico).speed(0.5));
-                            });
-                            ui.separator();
-                            ui.horizontal(|ui| {
-                                ui.label("Valor Total:");
-                                ui.strong(format!(
-                                    "R$ {:.2}",
-                                    self.os_data.total_pecas + self.valor_servico
-                                ));
-                            });
-                        });
-                    });
-                });
-            });
-
-            ui.separator();
-            ui.heading("Histórico de Alterações");
-            self.ui_tabela_historico(ui);
-            ui.add_space(12.0);
-
-            ui.horizontal(|ui| {
-                if ui.button("Salvar Alterações").clicked() {
-                    match crate::servicos::atualizar_os(&self.os_data, &self.usuario_logado) {
-                        Ok(_) => println!("OS {} salva com sucesso!", self.os_data.id),
-                        Err(e) => eprintln!("Erro ao salvar OS {}: {}", self.os_data.id, e),
-                    }
-                }
-                if ui.button("Voltar ao Painel Técnico").clicked() {
-                    evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Tecnico));
+                match self.aba_ativa {
+                    AbaDetalhesOS::Produtos => self.desenhar_aba_produtos(ui),
+                    AbaDetalhesOS::Servicos => self.desenhar_aba_servicos(ui),
+                    AbaDetalhesOS::Historico => self.desenhar_aba_historico(ui),
                 }
             });
         });
 
-        // Modal de busca de cliente
-        if self.abrir_busca_cliente {
-            egui::Window::new("Buscar Cliente")
-                .resizable(true)
-                .collapsible(false)
-                .show(ctx, |ui| {
-                    ui.label("Filtrar:");
-                    ui.text_edit_singleline(&mut self.filtro_busca_cliente);
-                    ui.separator();
-                    if let Ok(list) = crate::servicos::listar_clientes() {
-                        for c in list.into_iter().filter(|c| {
-                            c.nome
-                                .to_lowercase()
-                                .contains(&self.filtro_busca_cliente.to_lowercase())
-                        }) {
-                            if ui.button(format!("{} - {}", c.id, c.nome)).clicked() {
-                                self.os_data.cliente = c.nome.clone();
-                                self.abrir_busca_cliente = false;
-                                break;
-                            }
-                        }
-                    } else {
-                        ui.label("Falha ao obter clientes");
-                    }
-                    if ui.button("Fechar").clicked() {
-                        self.abrir_busca_cliente = false;
-                    }
-                });
-        }
-
-        // Modal de busca de técnico (lista de usuários com papel Técnico)
-        if self.abrir_busca_tecnico {
-            egui::Window::new("Buscar Técnico")
-                .resizable(true)
-                .collapsible(false)
-                .show(ctx, |ui| {
-                    ui.label("Filtrar:");
-                    ui.text_edit_singleline(&mut self.filtro_busca_tecnico);
-                    ui.separator();
-                    let usuarios = crate::servicos::listar_usuarios();
-                    for u in usuarios.into_iter().filter(|u| {
-                        u.nome_usuario
-                            .to_lowercase()
-                            .contains(&self.filtro_busca_tecnico.to_lowercase())
-                    }) {
-                        // nota: coluna role não está no InfoUsuario; estamos simplificando
-                        if ui
-                            .button(format!("{} - {}", u.id, u.nome_usuario))
-                            .clicked()
-                        {
-                            self.os_data.nome_tecnico_responsavel = u.nome_usuario.clone();
-                            self.abrir_busca_tecnico = false;
-                            break;
-                        }
-                    }
-                    if ui.button("Fechar").clicked() {
-                        self.abrir_busca_tecnico = false;
-                    }
-                });
-        }
-
-        // Modal de busca de tipo
-        if self.abrir_busca_tipo {
-            egui::Window::new("Buscar Tipo de OS")
-                .resizable(true)
-                .collapsible(false)
-                .show(ctx, |ui| {
-                    ui.label("Filtrar:");
-                    ui.text_edit_singleline(&mut self.filtro_busca_tipo);
-                    ui.separator();
-                    let tipos = vec!["Ordem de Serviço", "Orçamento", "Manutenção", "Instalação"];
-                    for t in tipos.into_iter().filter(|t| {
-                        t.to_lowercase()
-                            .contains(&self.filtro_busca_tipo.to_lowercase())
-                    }) {
-                        if ui.button(t).clicked() {
-                            // colocar o tipo no campo observacoes por enquanto
-                            self.os_data.observacoes = format!("Tipo: {}", t);
-                            self.abrir_busca_tipo = false;
-                            break;
-                        }
-                    }
-                    if ui.button("Fechar").clicked() {
-                        self.abrir_busca_tipo = false;
-                    }
-                });
-        }
-
-        evento_emitido
+        self.render_modal_tecnico(ctx);
+        app_event
     }
 
-    fn ui_detalhes_edicao(&mut self, ui: &mut egui::Ui) {
-        // Este método foi reduzido — a maior parte dos campos foi movida para o novo layout
-        ui.label("Parecer Técnico:");
-        ui.text_edit_multiline(&mut self.os_data.parecer_tecnico);
-    }
-
-    fn ui_pecas_servicos(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Peças e Serviços");
+    fn desenhar_toolbar(&mut self, ui: &mut Ui, app_event: &mut Option<AppEvent>) {
         ui.horizontal(|ui| {
-            ui.label("Adicionar Peça:");
-            let nome_peca_selecionada = self
-                .peca_selecionada_id
-                .and_then(|id| self.lista_pecas_estoque.iter().find(|p| p.id == id))
-                .map_or_else(
-                    || "Selecione uma peça...".to_string(),
-                    |p| p.descricao.clone(),
-                );
+            if ui
+                .add_enabled(!self.salvando, egui::Button::new("💾 Salvar Alterações"))
+                .clicked()
+            {
+                self.disparar_salvamento();
+            }
+            if self.salvando {
+                ui.spinner();
+                ui.label("Salvando...");
+            }
 
-            egui::ComboBox::from_id_salt("seletor_peca")
-                .selected_text(nome_peca_selecionada)
-                .show_ui(ui, |ui| {
-                    ui.add(
-                        egui::TextEdit::singleline(&mut self.filtro_peca_selecao)
-                            .hint_text("🔎 Buscar..."),
-                    );
-                    ui.separator();
-                    egui::ScrollArea::vertical()
-                        .max_height(200.0)
-                        .show(ui, |ui| {
-                            let filtro = self.filtro_peca_selecao.to_lowercase();
-                            for peca in self
-                                .lista_pecas_estoque
-                                .iter()
-                                .filter(|p| p.descricao.to_lowercase().contains(&filtro))
-                            {
+            if ui.button("↩ Voltar para Lista").clicked() {
+                *app_event = Some(AppEvent::NavegarPara(TelaAtiva::Ordens));
+            }
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let total_geral = self.os_editada.total_pecas + self.os_editada.total_servicos;
+                ui.label(
+                    RichText::new(format!("Total Geral: R$ {:.2}", total_geral))
+                        .strong()
+                        .size(16.0),
+                );
+                ui.separator();
+                ui.label(format!(
+                    "Serviços: R$ {:.2}",
+                    self.os_editada.total_servicos
+                ));
+                ui.separator();
+                ui.label(format!("Peças: R$ {:.2}", self.os_editada.total_pecas));
+            });
+        });
+    }
+
+    fn desenhar_dados_gerais(&mut self, ui: &mut Ui) {
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.heading("Informações Gerais");
+            ui.separator();
+
+            egui::Grid::new("grid_dados_gerais")
+                .num_columns(2)
+                .spacing([20.0, 8.0])
+                .show(ui, |ui| {
+                    ui.label("Cliente:");
+                    ui.text_edit_singleline(&mut self.os_editada.cliente);
+                    ui.end_row();
+
+                    ui.label("Equipamento:");
+                    ui.text_edit_singleline(&mut self.os_editada.equipamento);
+                    ui.end_row();
+
+                    ui.label("Nº de Série:");
+                    ui.text_edit_singleline(&mut self.os_editada.numero_serie_equipamento);
+                    ui.end_row();
+
+                    ui.label("Status:");
+                    egui::ComboBox::from_id_salt("status_os")
+                        .selected_text(format!("{:?}", self.os_editada.status))
+                        .show_ui(ui, |ui| {
+                            for status in StatusOS::iter() {
                                 ui.selectable_value(
-                                    &mut self.peca_selecionada_id,
-                                    Some(peca.id),
-                                    &peca.descricao,
+                                    &mut self.os_editada.status,
+                                    status,
+                                    format!("{:?}", status),
                                 );
                             }
                         });
+                    ui.end_row();
+
+                    ui.label("Situação:");
+                    egui::ComboBox::from_id_salt("situacao_os")
+                        .selected_text(format!("{:?}", self.os_editada.situacao))
+                        .show_ui(ui, |ui| {
+                            for situacao in SituacaoOS::iter() {
+                                ui.selectable_value(
+                                    &mut self.os_editada.situacao,
+                                    situacao,
+                                    format!("{:?}", situacao),
+                                );
+                            }
+                        });
+                    ui.end_row();
+
+                    ui.label("Técnico Responsável:");
+                    ui.horizontal(|ui| {
+                        ui.text_edit_singleline(&mut self.os_editada.nome_tecnico_responsavel);
+                        if ui.button("👤 Buscar").clicked() {
+                            self.mostrar_modal_tecnico = true;
+                        }
+                    });
+                    ui.end_row();
                 });
 
-            ui.add(
-                egui::DragValue::new(&mut self.quantidade_peca_adicionar)
-                    .speed(1.0)
-                    .range(1..=99),
+            ui.add_space(10.0);
+            ui.label("Defeito Relatado:");
+            ui.text_edit_multiline(&mut self.os_editada.defeito_relatado);
+
+            ui.label("Parecer Técnico:");
+            ui.text_edit_multiline(&mut self.os_editada.parecer_tecnico);
+
+            ui.label("Observações Internas:");
+            ui.text_edit_multiline(&mut self.os_editada.observacoes);
+        });
+    }
+
+    fn desenhar_seletor_abas(&mut self, ui: &mut Ui) {
+        ui.horizontal(|ui| {
+            ui.style_mut().visuals.selection.bg_fill = egui::Color32::from_rgb(50, 100, 150);
+            ui.selectable_value(
+                &mut self.aba_ativa,
+                AbaDetalhesOS::Produtos,
+                "Produtos / Peças",
             );
-
-            if ui.button("➕ Adicionar").clicked() {
-                if let Some(id) = self.peca_selecionada_id {
-                    if let Some(peca_estoque) = self.lista_pecas_estoque.iter().find(|p| p.id == id)
-                    {
-                        let peca_os = PecaOS {
-                            id_peca: peca_estoque.id,
-                            codigo_interno: peca_estoque.codigo_interno.clone(),
-                            descricao: peca_estoque.descricao.clone(),
-                            quantidade: self.quantidade_peca_adicionar,
-                            preco_venda_unitario: peca_estoque.preco_venda,
-                            preco_total: peca_estoque.preco_venda
-                                * self.quantidade_peca_adicionar as f64,
-                        };
-                        self.os_data.pecas.push(peca_os);
-                        self.recalcular_totais();
-                        self.peca_selecionada_id = None;
-                        self.quantidade_peca_adicionar = 1;
-                    }
-                }
-            }
+            ui.selectable_value(
+                &mut self.aba_ativa,
+                AbaDetalhesOS::Servicos,
+                "Serviços / Mão de Obra",
+            );
+            ui.selectable_value(
+                &mut self.aba_ativa,
+                AbaDetalhesOS::Historico,
+                "Histórico de Alterações",
+            );
         });
-
-        egui::Grid::new("grid_pecas_os")
-            .num_columns(5)
-            .show(ui, |ui| {
-                ui.strong("Descrição");
-                ui.strong("Qtd.");
-                ui.strong("Vlr. Unit.");
-                ui.strong("Vlr. Total");
-                ui.strong("Ações");
-                ui.end_row();
-
-                for (idx, peca) in self.os_data.pecas.iter_mut().enumerate() {
-                    ui.label(&peca.descricao);
-                    ui.add(
-                        egui::DragValue::new(&mut peca.quantidade)
-                            .speed(1.0)
-                            .range(1..=999),
-                    );
-                    ui.label(format!("R$ {:.2}", peca.preco_venda_unitario));
-                    ui.label(format!("R$ {:.2}", peca.preco_total));
-                    if ui.button("Remover").clicked() {
-                        self.os_data.pecas.remove(idx);
-                        self.recalcular_totais();
-                        break;
-                    }
-                    ui.end_row();
-                }
-            });
-
         ui.separator();
-        ui.horizontal(|ui| {
-            ui.label("Total em Peças:");
-            ui.strong(format!("R$ {:.2}", self.os_data.total_pecas));
-        });
     }
 
-    fn ui_tabela_historico(&mut self, ui: &mut egui::Ui) {
-        // Implementação simples para evitar warning de variável não usada.
-        ui.label("Sem histórico disponível");
-    }
+    fn desenhar_aba_produtos(&mut self, ui: &mut Ui) {
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.heading("Adicionar Peça do Estoque");
+            ui.horizontal(|ui| {
+                ui.label("Buscar Peça:");
+                ui.text_edit_singleline(&mut self.filtro_peca);
+            });
 
-    // Placeholder para a aba de serviços (Mão de obra). Implementação mínima
-    // por enquanto para compilar e permitir futura expansão.
-    fn ui_servicos(&mut self, ui: &mut egui::Ui) {
-        ui.heading("Serviços / Mão de Obra");
-        ui.label("Adicionar descrição do serviço e valor.");
-        ui.horizontal(|ui| {
-            ui.label("Descrição:");
-            ui.text_edit_singleline(&mut self.os_data.observacoes);
-        });
-        ui.horizontal(|ui| {
-            ui.label("Valor:");
-            // Como valor de serviço separado usamos self.valor_servico
-            ui.add(egui::DragValue::new(&mut self.valor_servico).speed(0.5));
-        });
-        ui.horizontal(|ui| {
-            ui.label("Adicionar serviço:");
-            let nome = self
-                .servico_selecionado_id
-                .and_then(|id| self.lista_servicos.iter().find(|s| s.id == id))
-                .map_or_else(|| "Selecione...".to_string(), |s| s.nome.clone());
-            egui::ComboBox::from_id_salt("seletor_servico")
-                .selected_text(nome)
-                .show_ui(ui, |ui| {
-                    for s in &self.lista_servicos {
-                        ui.selectable_value(&mut self.servico_selecionado_id, Some(s.id), &s.nome);
-                    }
-                });
-            ui.add(egui::DragValue::new(&mut self.quantidade_servico).range(1..=99));
-            if ui.button("Adicionar serviço").clicked() {
-                if let Some(id) = self.servico_selecionado_id {
-                    if let Some(s) = self.lista_servicos.iter().find(|x| x.id == id) {
-                        let svc = crate::servicos::ServicoOS {
-                            id_servico: s.id,
-                            nome: s.nome.clone(),
-                            descricao: s.descricao.clone(),
-                            quantidade: self.quantidade_servico,
-                            preco_unitario: s.preco,
-                            preco_total: s.preco * self.quantidade_servico as f64,
-                        };
-                        self.os_data.servicos.push(svc);
-                        self.recalcular_totais();
-                    }
+            let pecas_guard = self.lista_pecas_estoque.lock().unwrap();
+            match &*pecas_guard {
+                EstadoCarregamento::Carregando => {
+                    ui.spinner();
                 }
+                EstadoCarregamento::Erro(e) => {
+                    ui.colored_label(egui::Color32::RED, e);
+                }
+                EstadoCarregamento::Pronto(pecas) => {
+                    let pecas_clone = pecas.clone();
+                    drop(pecas_guard);
+
+                    let filtro = self.filtro_peca.to_lowercase();
+                    let pecas_filtradas: Vec<_> = pecas_clone
+                        .into_iter()
+                        .filter(|p| {
+                            self.filtro_peca.is_empty()
+                                || p.descricao.to_lowercase().contains(&filtro)
+                                || p.codigo_interno.to_lowercase().contains(&filtro)
+                        })
+                        .collect();
+
+                    egui::ScrollArea::vertical()
+                        .max_height(150.0)
+                        .show(ui, |ui| {
+                            for peca in pecas_filtradas.iter().take(10) {
+                                ui.horizontal(|ui| {
+                                    ui.label(format!(
+                                        "{} - {}",
+                                        peca.codigo_interno, peca.descricao
+                                    ));
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if ui.button("➕").clicked() {
+                                                self.adicionar_peca(peca);
+                                                self.filtro_peca.clear();
+                                            }
+                                        },
+                                    );
+                                });
+                                ui.separator();
+                            }
+                        });
+                    return;
+                }
+                _ => {}
             }
         });
 
-        egui::Grid::new("grid_servicos_os")
-            .num_columns(5)
-            .show(ui, |ui| {
-                ui.strong("Serviço");
-                ui.strong("Qtd.");
-                ui.strong("Vlr. Unit.");
-                ui.strong("Vlr. Total");
-                ui.strong("Ações");
-                ui.end_row();
+        ui.add_space(10.0);
+        ui.heading("Peças na Ordem de Serviço");
+        let table = TableBuilder::new(ui)
+            .striped(true)
+            .resizable(true)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(Column::auto())
+            .column(Column::initial(80.0))
+            .column(Column::initial(100.0))
+            .column(Column::initial(100.0))
+            .column(Column::initial(30.0));
 
-                for (idx, s) in self.os_data.servicos.iter_mut().enumerate() {
-                    ui.label(&s.nome);
-                    ui.add(
-                        egui::DragValue::new(&mut s.quantidade)
-                            .speed(1.0)
-                            .range(1..=999),
-                    );
-                    ui.label(format!("R$ {:.2}", s.preco_unitario));
-                    ui.label(format!("R$ {:.2}", s.preco_total));
-                    if ui.button("Remover").clicked() {
-                        self.os_data.servicos.remove(idx);
-                        self.recalcular_totais();
-                        break;
-                    }
-                    ui.end_row();
+        table
+            .header(20.0, |mut header| {
+                header.col(|ui| {
+                    ui.strong("Descrição");
+                });
+                header.col(|ui| {
+                    ui.strong("Qtd.");
+                });
+                header.col(|ui| {
+                    ui.strong("Vlr. Unit.");
+                });
+                header.col(|ui| {
+                    ui.strong("Vlr. Total");
+                });
+                header.col(|ui| {
+                    ui.strong("Ação");
+                });
+            })
+            .body(|mut body| {
+                let mut peca_a_remover: Option<usize> = None;
+                let mut houve_alteracao = false;
+                let len = self.os_editada.pecas.len();
+                for i in 0..len {
+                    // get mutable reference to the current item without holding other borrows
+                    let (_left, right) = self.os_editada.pecas.split_at_mut(i);
+                    let peca_os = &mut right[0];
+                    body.row(30.0, |mut row| {
+                        row.col(|ui| {
+                            ui.label(&peca_os.descricao);
+                        });
+                        row.col(|ui| {
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut peca_os.quantidade)
+                                        .speed(1)
+                                        .range(1..=999),
+                                )
+                                .changed()
+                            {
+                                houve_alteracao = true;
+                            }
+                        });
+                        row.col(|ui| {
+                            ui.label(format!("R$ {:.2}", peca_os.preco_venda_unitario));
+                        });
+                        row.col(|ui| {
+                            ui.label(format!(
+                                "R$ {:.2}",
+                                peca_os.quantidade as f64 * peca_os.preco_venda_unitario
+                            ));
+                        });
+                        row.col(|ui| {
+                            if ui.button("❌").on_hover_text("Remover peça").clicked() {
+                                peca_a_remover = Some(i);
+                            }
+                        });
+                    });
+                }
+                if let Some(index) = peca_a_remover {
+                    self.os_editada.pecas.remove(index);
+                    houve_alteracao = true;
+                }
+                if houve_alteracao {
+                    self.recalcular_totais();
                 }
             });
+    }
+
+    fn desenhar_aba_servicos(&mut self, ui: &mut Ui) {
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.heading("Adicionar Serviço / Mão de Obra");
+            ui.horizontal(|ui| {
+                ui.label("Buscar Serviço:");
+                ui.text_edit_singleline(&mut self.filtro_servico);
+            });
+
+            let servicos_guard = self.lista_servicos_catalogo.lock().unwrap();
+            match &*servicos_guard {
+                EstadoCarregamento::Carregando => {
+                    ui.spinner();
+                }
+                EstadoCarregamento::Erro(e) => {
+                    ui.colored_label(egui::Color32::RED, e);
+                }
+                EstadoCarregamento::Pronto(servicos) => {
+                    let servicos_clone = servicos.clone();
+                    drop(servicos_guard);
+
+                    let filtro = self.filtro_servico.to_lowercase();
+                    let servicos_filtrados: Vec<_> = servicos_clone
+                        .into_iter()
+                        .filter(|s| {
+                            self.filtro_servico.is_empty()
+                                || s.nome.to_lowercase().contains(&filtro)
+                        })
+                        .collect();
+
+                    egui::ScrollArea::vertical()
+                        .max_height(150.0)
+                        .show(ui, |ui| {
+                            for servico in servicos_filtrados.iter().take(10) {
+                                ui.horizontal(|ui| {
+                                    ui.label(&servico.nome);
+                                    ui.with_layout(
+                                        egui::Layout::right_to_left(egui::Align::Center),
+                                        |ui| {
+                                            if ui.button("➕").clicked() {
+                                                self.adicionar_servico(servico);
+                                                self.filtro_servico.clear();
+                                            }
+                                        },
+                                    );
+                                });
+                                ui.separator();
+                            }
+                        });
+                    return;
+                }
+                _ => {}
+            }
+        });
+
+        ui.add_space(10.0);
+        ui.heading("Serviços na Ordem de Serviço");
+        let table = TableBuilder::new(ui)
+            .striped(true)
+            .resizable(true)
+            .cell_layout(egui::Layout::left_to_right(egui::Align::Center))
+            .column(Column::auto())
+            .column(Column::initial(80.0))
+            .column(Column::initial(100.0))
+            .column(Column::initial(100.0))
+            .column(Column::initial(30.0));
+
+        table
+            .header(20.0, |mut header| {
+                header.col(|ui| {
+                    ui.strong("Descrição");
+                });
+                header.col(|ui| {
+                    ui.strong("Qtd.");
+                });
+                header.col(|ui| {
+                    ui.strong("Vlr. Unit.");
+                });
+                header.col(|ui| {
+                    ui.strong("Vlr. Total");
+                });
+                header.col(|ui| {
+                    ui.strong("Ação");
+                });
+            })
+            .body(|mut body| {
+                let mut servico_a_remover: Option<usize> = None;
+                let mut houve_alteracao = false;
+                let len = self.os_editada.servicos.len();
+                for i in 0..len {
+                    let (_left, right) = self.os_editada.servicos.split_at_mut(i);
+                    let servico_os = &mut right[0];
+                    body.row(30.0, |mut row| {
+                        row.col(|ui| {
+                            ui.label(&servico_os.nome);
+                        });
+                        row.col(|ui| {
+                            if ui
+                                .add(
+                                    egui::DragValue::new(&mut servico_os.quantidade)
+                                        .speed(1)
+                                        .range(1..=999),
+                                )
+                                .changed()
+                            {
+                                houve_alteracao = true;
+                            }
+                        });
+                        row.col(|ui| {
+                            ui.label(format!("R$ {:.2}", servico_os.preco_unitario));
+                        });
+                        row.col(|ui| {
+                            ui.label(format!(
+                                "R$ {:.2}",
+                                servico_os.quantidade as f64 * servico_os.preco_unitario
+                            ));
+                        });
+                        row.col(|ui| {
+                            if ui.button("❌").on_hover_text("Remover serviço").clicked() {
+                                servico_a_remover = Some(i);
+                            }
+                        });
+                    });
+                }
+                if let Some(index) = servico_a_remover {
+                    self.os_editada.servicos.remove(index);
+                    houve_alteracao = true;
+                }
+                if houve_alteracao {
+                    self.recalcular_totais();
+                }
+            });
+    }
+
+    fn desenhar_aba_historico(&mut self, ui: &mut Ui) {
+        ui.heading("Histórico de Alterações");
+        egui::ScrollArea::vertical().show(ui, |ui| {
+            if self.os_editada.historico_edicoes.is_empty() {
+                ui.label("Nenhum histórico de alteração para esta OS.");
+            } else {
+                for entrada in &self.os_editada.historico_edicoes {
+                    ui.group(|ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new(&entrada.campo_alterado).strong());
+                            ui.label(format!("por {}", entrada.usuario));
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    ui.label(&entrada.data_hora);
+                                },
+                            );
+                        });
+                        ui.label(format!("De: '{}'", entrada.valor_antigo));
+                        ui.label(format!("Para: '{}'", entrada.valor_novo));
+                    });
+                }
+            }
+        });
+    }
+
+    fn render_modal_tecnico(&mut self, ctx: &egui::Context) {
+        if !self.mostrar_modal_tecnico {
+            return;
+        }
+
+        // prepare snapshot of technicians and avoid holding locks while showing UI
+        let tecnicos_snapshot = {
+            let guard = self.lista_tecnicos.lock().unwrap();
+            match &*guard {
+                EstadoCarregamento::Pronto(v) => Some(v.clone()),
+                _ => None,
+            }
+        };
+
+        let mut selected: Option<String> = None;
+        egui::Window::new("Selecionar Técnico")
+            .collapsible(false)
+            .resizable(true)
+            .show(ctx, |ui| {
+                ui.text_edit_singleline(&mut self.filtro_tecnico);
+                ui.separator();
+
+                if let Some(tecnicos) = &tecnicos_snapshot {
+                    let filtro = self.filtro_tecnico.to_lowercase();
+                    egui::ScrollArea::vertical()
+                        .max_height(200.0)
+                        .show(ui, |ui| {
+                            for tecnico in tecnicos
+                                .iter()
+                                .filter(|t| t.nome_usuario.to_lowercase().contains(&filtro))
+                            {
+                                if ui.selectable_label(false, &tecnico.nome_usuario).clicked() {
+                                    selected = Some(tecnico.nome_usuario.clone());
+                                }
+                            }
+                        });
+                } else {
+                    ui.label("Carregando técnicos...");
+                }
+            });
+
+        if let Some(nome) = selected {
+            self.os_editada.nome_tecnico_responsavel = nome;
+            self.mostrar_modal_tecnico = false;
+        }
+    }
+
+    fn adicionar_peca(&mut self, peca_estoque: &Peca) {
+        if let Some(existente) = self
+            .os_editada
+            .pecas
+            .iter_mut()
+            .find(|p| p.id_peca == peca_estoque.id)
+        {
+            existente.quantidade += 1;
+        } else {
+            self.os_editada.pecas.push(PecaOS {
+                id_peca: peca_estoque.id,
+                codigo_interno: peca_estoque.codigo_interno.clone(),
+                descricao: peca_estoque.descricao.clone(),
+                quantidade: 1,
+                preco_venda_unitario: peca_estoque.preco_venda,
+                preco_total: 0.0,
+            });
+        }
+        self.recalcular_totais();
+    }
+
+    fn adicionar_servico(&mut self, servico_catalogo: &Servico) {
+        if let Some(existente) = self
+            .os_editada
+            .servicos
+            .iter_mut()
+            .find(|s| s.id_servico == servico_catalogo.id)
+        {
+            existente.quantidade += 1;
+        } else {
+            self.os_editada.servicos.push(ServicoOS {
+                id_servico: servico_catalogo.id,
+                nome: servico_catalogo.nome.clone(),
+                descricao: servico_catalogo.descricao.clone(),
+                quantidade: 1,
+                preco_unitario: servico_catalogo.preco,
+                preco_total: 0.0,
+            });
+        }
+        self.recalcular_totais();
     }
 
     fn recalcular_totais(&mut self) {
-        self.os_data.total_pecas = self.os_data.pecas.iter().map(|p| p.preco_total).sum();
-        self.os_data.total_servicos = self.os_data.servicos.iter().map(|s| s.preco_total).sum();
+        self.os_editada.total_pecas = self
+            .os_editada
+            .pecas
+            .iter_mut()
+            .map(|p| {
+                p.preco_total = p.quantidade as f64 * p.preco_venda_unitario;
+                p.preco_total
+            })
+            .sum();
+        self.os_editada.total_servicos = self
+            .os_editada
+            .servicos
+            .iter_mut()
+            .map(|s| {
+                s.preco_total = s.quantidade as f64 * s.preco_unitario;
+                s.preco_total
+            })
+            .sum();
+    }
+
+    // --- Funções de Comunicação com o Servidor ---
+
+    fn get_server_address(&self) -> String {
+        self.endereco_servidor.lock().unwrap().clone()
+    }
+
+    fn disparar_carregamento_os(&self) {
+        let os_id = self.os_id;
+        let server_addr = self.get_server_address();
+        let tx = self.tx_evento.clone();
+        let estado_os = self.estado_os.clone();
+
+        crate::executor::spawn(move || {
+            let client = crate::http_client::get_client();
+            let url = format!("{}/ordens/{}", server_addr, os_id);
+            let resultado = match client.get(&url).send() {
+                Ok(resp) => resp.json::<OrdemServico>().map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+            *estado_os.lock().unwrap() = Some(resultado);
+            let _ = tx.send(AppEvent::Repaint);
+        });
+    }
+
+    fn disparar_carregamento_pecas(&self) {
+        let server_addr = self.get_server_address();
+        let tx = self.tx_evento.clone();
+        let estado_pecas = self.lista_pecas_estoque.clone();
+        *estado_pecas.lock().unwrap() = EstadoCarregamento::Carregando;
+
+        crate::executor::spawn(move || {
+            let client = crate::http_client::get_client();
+            let url = format!("{}/estoque/pecas", server_addr);
+            let resultado = match client.get(&url).send() {
+                Ok(resp) => resp.json::<Vec<Peca>>().map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+            *estado_pecas.lock().unwrap() = match resultado {
+                Ok(pecas) => EstadoCarregamento::Pronto(pecas),
+                Err(e) => EstadoCarregamento::Erro(e),
+            };
+            let _ = tx.send(AppEvent::Repaint);
+        });
+    }
+
+    fn disparar_carregamento_servicos(&self) {
+        let server_addr = self.get_server_address();
+        let tx = self.tx_evento.clone();
+        let estado_servicos = self.lista_servicos_catalogo.clone();
+        *estado_servicos.lock().unwrap() = EstadoCarregamento::Carregando;
+
+        crate::executor::spawn(move || {
+            let client = crate::http_client::get_client();
+            let url = format!("{}/servicos", server_addr);
+            let resultado = match client.get(&url).send() {
+                Ok(resp) => resp.json::<Vec<Servico>>().map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+            *estado_servicos.lock().unwrap() = match resultado {
+                Ok(servicos) => EstadoCarregamento::Pronto(servicos),
+                Err(e) => EstadoCarregamento::Erro(e),
+            };
+            let _ = tx.send(AppEvent::Repaint);
+        });
+    }
+
+    fn disparar_carregamento_tecnicos(&self) {
+        let server_addr = self.get_server_address();
+        let tx = self.tx_evento.clone();
+        let estado_tecnicos = self.lista_tecnicos.clone();
+        *estado_tecnicos.lock().unwrap() = EstadoCarregamento::Carregando;
+
+        crate::executor::spawn(move || {
+            let client = crate::http_client::get_client();
+            let url = format!("{}/usuarios", server_addr);
+            let resultado = match client.get(&url).send() {
+                Ok(resp) => resp.json::<Vec<InfoUsuario>>().map_err(|e| e.to_string()),
+                Err(e) => Err(e.to_string()),
+            };
+            *estado_tecnicos.lock().unwrap() = match resultado {
+                Ok(tecnicos) => EstadoCarregamento::Pronto(tecnicos),
+                Err(e) => EstadoCarregamento::Erro(e),
+            };
+            let _ = tx.send(AppEvent::Repaint);
+        });
+    }
+
+    fn disparar_salvamento(&mut self) {
+        self.salvando = true;
+        self.notificacao = None;
+
+        let payload = AtualizarOrdemPayload {
+            os: self.os_editada.clone(),
+            usuario: self.usuario_logado.clone(),
+        };
+        let server_addr = self.get_server_address();
+        let os_id = self.os_id;
+        let tx = self.tx_evento.clone();
+        let resultado_salvar = self.resultado_salvar.clone();
+
+        crate::executor::spawn(move || {
+            let client = crate::http_client::get_client();
+            let url = format!("{}/ordens/{}", server_addr, os_id);
+            let resultado = match client.put(&url).json(&payload).send() {
+                Ok(resp) => {
+                    if resp.status().is_success() {
+                        Ok(())
+                    } else {
+                        Err(format!("Erro do servidor: {}", resp.status()))
+                    }
+                }
+                Err(e) => Err(e.to_string()),
+            };
+            *resultado_salvar.lock().unwrap() = Some(resultado);
+            let _ = tx.send(AppEvent::Repaint);
+        });
+    }
+
+    fn processar_resultados_carregamento(&mut self, _ctx: &egui::Context) {
+        // Take the value out of the mutex in a short scope so the guard is dropped
+        let maybe_resultado = {
+            let mut guard = self.estado_os.lock().unwrap();
+            guard.take()
+        };
+
+        if let Some(resultado) = maybe_resultado {
+            match resultado {
+                Ok(os) => {
+                    self.os_editada = os;
+                    self.recalcular_totais();
+                }
+                Err(e) => {
+                    self.notificacao =
+                        Some((format!("Erro ao carregar OS: {}", e), egui::Color32::RED))
+                }
+            }
+        }
+
+        if let Some(resultado) = self.resultado_salvar.lock().unwrap().take() {
+            self.salvando = false;
+            match resultado {
+                Ok(_) => {
+                    self.notificacao = Some((
+                        "Ordem de Serviço salva com sucesso!".to_string(),
+                        egui::Color32::GREEN,
+                    ));
+                    self.disparar_carregamento_os();
+                }
+                Err(e) => {
+                    self.notificacao = Some((format!("Erro ao salvar: {}", e), egui::Color32::RED))
+                }
+            }
+        }
     }
 }

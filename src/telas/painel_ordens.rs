@@ -3,6 +3,7 @@
 use crate::aplicacao::AppEvent;
 use crate::servicos::{OrdemServico, PapelUsuario};
 use eframe::egui;
+use genpdf::{elements, Document};
 use std::sync::{Arc, Mutex};
 
 fn gerar_texto_os(os: &crate::servicos::OrdemServico) -> String {
@@ -35,70 +36,6 @@ fn gerar_texto_os(os: &crate::servicos::OrdemServico) -> String {
     s
 }
 
-#[allow(dead_code)]
-fn exportar_pdf_os(os: &crate::servicos::OrdemServico, caminho: &str) -> Result<(), String> {
-    use printpdf::{Mm, PdfDocument};
-    use std::fs::File;
-
-    // Monta o texto simples
-    let mut texto = String::new();
-    texto.push_str(&format!("Ordem de Serviço Nº {}\n\n", os.id));
-    texto.push_str(&format!("Cliente: {}\n", os.cliente));
-    texto.push_str(&format!("Equipamento: {}\n", os.equipamento));
-    texto.push_str(&format!("Técnico: {}\n", os.nome_tecnico_responsavel));
-    texto.push_str(&format!("Status: {:?}\n\n", os.status));
-    texto.push_str("Peças:\n");
-    for p in &os.pecas {
-        texto.push_str(&format!(
-            "- {} x{} -> R$ {:.2}\n",
-            p.descricao, p.quantidade, p.preco_total
-        ));
-    }
-    texto.push_str(&format!("Total Peças: R$ {:.2}\n\n", os.total_pecas));
-    texto.push_str("Serviços:\n");
-    for svc in &os.servicos {
-        texto.push_str(&format!(
-            "- {} x{} -> R$ {:.2}\n",
-            svc.nome, svc.quantidade, svc.preco_total
-        ));
-    }
-    texto.push_str(&format!("Total Serviços: R$ {:.2}\n\n", os.total_servicos));
-    texto.push_str(&format!("Observações:\n{}\n", os.observacoes));
-
-    // Cria documento PDF
-    let (doc, page1, layer1) =
-        PdfDocument::new(&format!("OS {}", os.id), Mm(210.0), Mm(297.0), "Layer 1");
-
-    // Tenta carregar fonte local (assets/fonts/JetBrainsMono-Regular.ttf)
-    let font_path = "assets/fonts/JetBrainsMono-Regular.ttf";
-    let font_file = File::open(font_path).map_err(|e| format!("Falha ao abrir fonte: {}", e))?;
-    let font = doc
-        .add_external_font(font_file)
-        .map_err(|e| format!("Falha ao adicionar fonte: {}", e))?;
-
-    let current_layer = doc.get_page(page1).get_layer(layer1);
-
-    // Escrever o texto linha por linha
-    let mut y = Mm(280.0);
-    let lines: Vec<&str> = texto.lines().collect();
-    for line in lines {
-        current_layer.use_text(line, 12.0, Mm(10.0), y, &font);
-        y -= Mm(6.0);
-        if y.0 < 10.0 {
-            // sem paginação por simplicidade
-            break;
-        }
-    }
-
-    use std::io::BufWriter;
-    let file = File::create(caminho).map_err(|e| format!("Falha ao criar arquivo: {}", e))?;
-    let mut writer = BufWriter::new(file);
-    doc.save(&mut writer)
-        .map_err(|e| format!("Falha ao salvar PDF: {}", e))?;
-
-    Ok(())
-}
-
 pub struct TelaOrdens {
     ordens: Arc<Mutex<Vec<OrdemServico>>>,
     filtro_busca: String,
@@ -107,6 +44,22 @@ pub struct TelaOrdens {
     // Estado para modal de visualização/impressão
     modal_visualizar_aberto: bool,
     os_atual: Option<OrdemServico>,
+}
+
+fn exportar_pdf_os(os: &crate::servicos::OrdemServico, caminho: &str) -> Result<(), String> {
+    // Monta um documento PDF simples usando genpdf
+    let font_family = genpdf::fonts::from_files("./assets/fonts", "JetBrainsMono-Regular", None)
+        .map_err(|e| e.to_string())?;
+    let mut doc = Document::new(font_family);
+    doc.set_minimal_conformance();
+    let decorator = genpdf::SimplePageDecorator::new();
+    doc.set_page_decorator(decorator);
+
+    let texto = gerar_texto_os(os);
+    let para = elements::Paragraph::new(texto);
+    doc.push(para);
+
+    doc.render_to_file(caminho).map_err(|e| e.to_string())
 }
 
 impl TelaOrdens {
@@ -303,17 +256,25 @@ impl TelaOrdens {
                                         Err(e) => eprintln!("Falha ao salvar arquivo: {}", e),
                                     }
                                 }
-                                if ui.button("Exportar PDF / Imprimir").clicked() {
-                                    let nome_pdf = format!("os_{}.pdf", os_clone.id);
-                                    match exportar_pdf_os(&os_clone, &nome_pdf) {
+                                if ui.button("Exportar TXT / Imprimir").clicked() {
+                                    let nome_txt = format!("os_{}.txt", os_clone.id);
+                                    let texto = gerar_texto_os(&os_clone);
+                                    match std::fs::write(&nome_txt, texto) {
                                         Ok(_) => {
-                                            println!("PDF gerado: {}", nome_pdf);
-                                            // Tenta abrir com aplicativo padrão
-                                            if let Err(e) = open::that(&nome_pdf) {
-                                                eprintln!("Falha ao abrir PDF: {}", e);
+                                            println!("Arquivo salvo: {}", nome_txt);
+                                            if let Err(e) = open::that(&nome_txt) {
+                                                eprintln!("Falha ao abrir arquivo: {}", e);
                                             }
                                         }
-                                        Err(err) => eprintln!("Erro ao gerar PDF: {}", err),
+                                        Err(e) => eprintln!("Falha ao salvar arquivo: {}", e),
+                                    }
+                                }
+                                if ui.button("Exportar PDF").clicked() {
+                                    let nome_pdf = format!("os_{}.pdf", os_clone.id);
+                                    if let Err(e) = exportar_pdf_os(&os_clone, &nome_pdf) {
+                                        eprintln!("Erro ao gerar PDF: {}", e);
+                                    } else {
+                                        println!("PDF salvo: {}", nome_pdf);
                                     }
                                 }
                                 if ui.button("Fechar").clicked() {

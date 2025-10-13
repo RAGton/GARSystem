@@ -9,12 +9,14 @@ use crate::telas::{
     painel_tecnico::TelaTecnico,
 };
 use eframe::egui::{self, ColorImage, TextureHandle};
+use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::{Arc, Mutex};
 
 #[derive(Debug)]
 pub enum AppEvent {
     NavegarPara(TelaAtiva),
     AbrirEditorOS(u32),
+    Repaint,
     VoltarParaDashboard,
     FecharOverlayCriarOs,
 }
@@ -66,8 +68,11 @@ pub struct AplicativoPrincipal {
     logo: Option<TextureHandle>,
     logo_data: Option<ColorImage>,
     endereco_servidor: Arc<Mutex<String>>,
+    usuario_logado: Option<String>,
     // Quando preenchido, exibe a tela de criação de OS como janela flutuante
     overlay_criar_os: Option<TelaCriarOs>,
+    evento_tx: Sender<AppEvent>,
+    evento_rx: Receiver<AppEvent>,
 }
 
 fn definir_estilo_azul(ctx: &egui::Context, tema: Tema) {
@@ -116,6 +121,8 @@ impl AplicativoPrincipal {
 
         let endereco_servidor = Arc::new(Mutex::new(endereco_servidor_str));
 
+        let (tx, rx) = mpsc::channel::<AppEvent>();
+
         let estado_tela = Some(EstadoTela::Login(TelaLogin::new(
             Arc::clone(&endereco_servidor),
             nome_usuario,
@@ -135,12 +142,23 @@ impl AplicativoPrincipal {
             logo_data,
             endereco_servidor,
             overlay_criar_os: None,
+            usuario_logado: None,
+            evento_tx: tx,
+            evento_rx: rx,
         }
     }
 }
 
 impl eframe::App for AplicativoPrincipal {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+        // Processar eventos vindos de threads (ex: solicitações de repaint)
+        while let Ok(ev) = self.evento_rx.try_recv() {
+            match ev {
+                AppEvent::Repaint => ctx.request_repaint(),
+                _ => self.processar_evento(ev),
+            }
+        }
+
         // Sincronizar tema se tiver sido alterado via Login/Storage
         if let Some(storage) = frame.storage() {
             if let Some(tema_str) = storage.get_string("tema") {
@@ -181,6 +199,7 @@ impl eframe::App for AplicativoPrincipal {
                             tela.salvar_estado_login(storage);
                         }
                         login_sucesso = Some(papel);
+                        self.usuario_logado = Some(tela.nome_usuario_atual().to_string());
                     }
                 }
                 EstadoTela::Configuracao(tela) => {
@@ -393,8 +412,10 @@ impl AplicativoPrincipal {
                     // na lista de Ordens, abrimos como overlay para manter a lista visível.
                     if tela == TelaAtiva::CriarOs {
                         if self.tela_ativa == TelaAtiva::Ordens {
-                            self.overlay_criar_os =
-                                Some(TelaCriarOs::new(Arc::clone(&self.endereco_servidor)));
+                            self.overlay_criar_os = Some(TelaCriarOs::new(
+                                Arc::clone(&self.endereco_servidor),
+                                self.usuario_logado.clone(),
+                            ));
                             // Garantir que continuamos com uma tela ativa (Ordens)
                             self.estado_tela = Some(
                                 TelaOrdens::new(papel, Arc::clone(&self.endereco_servidor)).into(),
@@ -420,9 +441,11 @@ impl AplicativoPrincipal {
                         TelaAtiva::Ordens => {
                             TelaOrdens::new(papel, Arc::clone(&self.endereco_servidor)).into()
                         }
-                        TelaAtiva::CriarOs => {
-                            TelaCriarOs::new(Arc::clone(&self.endereco_servidor)).into()
-                        }
+                        TelaAtiva::CriarOs => TelaCriarOs::new(
+                            Arc::clone(&self.endereco_servidor),
+                            self.usuario_logado.clone(),
+                        )
+                        .into(),
                         TelaAtiva::Financeiro => TelaFinanceiro::new().into(),
                         TelaAtiva::Orcamentos => {
                             TelaOrcamentos::new(Arc::clone(&self.endereco_servidor)).into()
@@ -436,9 +459,21 @@ impl AplicativoPrincipal {
                     self.estado_tela = Some(novo_estado);
                 }
             }
+            AppEvent::Repaint => {
+                // ignorado aqui, já tratado no loop de recebimento
+            }
             AppEvent::AbrirEditorOS(os_id) => {
-                self.estado_tela =
-                    Some(TelaOsEdicao::new(os_id, Arc::clone(&self.endereco_servidor)).into());
+                self.estado_tela = Some(
+                    TelaOsEdicao::new(
+                        os_id,
+                        Arc::clone(&self.endereco_servidor),
+                        self.usuario_logado
+                            .clone()
+                            .unwrap_or_else(|| "sistema".to_string()),
+                        self.evento_tx.clone(),
+                    )
+                    .into(),
+                );
             }
             AppEvent::FecharOverlayCriarOs => {
                 self.overlay_criar_os = None;
@@ -455,6 +490,7 @@ impl AplicativoPrincipal {
 
     fn deslogar(&mut self, ctx: &egui::Context) {
         self.papel_usuario_logado = None;
+        self.usuario_logado = None;
         self.estado_tela = None;
         ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize([0.0, 0.0].into()));

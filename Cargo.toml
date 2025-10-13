@@ -21,31 +21,35 @@ path = "src/server.rs"
 
 # --- Dependências para a Interface Gráfica (GUI) ---
 # Versão especificada por você. O código será compatível com ela.
-eframe = "0.32.3"
+eframe = "0.33.0"
 image = { version = "0.25", features = ["png"] }
 reqwest = { version = "0.12", features = ["json", "blocking"] }
-egui_plot = "0.27.2"
-egui_extras = "0.23.0"
+egui_plot = "0.34.0"
+egui_extras = { version = "0.33.0", features = ["chrono"] }
 threadpool = "1.8"
 num_cpus = "1.17"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 
 # --- Dependências para o Servidor (Backend) ---
 # Usamos Axum, o framework web moderno que integra com Tokio
-axum = "0.7"
+axum = "0.8.6"
 tokio = { version = "1", features = ["full"] }
 tower-http = { version = "0.5.0", features = ["cors"] }
 
 # --- Dependências Compartilhadas (GUI, Servidor e Biblioteca) ---
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-thiserror = "1.0"
+thiserror = "2.0.17"
 once_cell = "1.19"
 dotenvy = "0.15"
+jsonwebtoken = "9"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 # --- Dependências de Banco de Dados e Criptografia ---
 # Versão fixada para estabilidade
-mysql = "25.0"
-bcrypt = "0.15"
+mysql = "26.0.1"
+bcrypt = "0.17.1"
 genpdf = "0.2"
-open = "1.7"
-printpdf = "0.3"
+open = "5.3.2"
+printpdf = "0.8.2"
