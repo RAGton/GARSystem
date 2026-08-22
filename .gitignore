@@ -8,4 +8,63 @@
 # MSVC Windows builds of rustc generate these, which store debugging information
 *.pdb
 
-# Environment variables
+# =============================================================================
+# Ambiente / Segredos — NUNCA versionar credenciais reais
+# =============================================================================
+# Ignora TODOS os arquivos .env* por padrão ...
+.env
+.env.*
+.env.local
+.env.*.local
+# ... exceto o .env.example, que é o template público (sem segredos reais)
+!.env.example
+
+# ============================================================================
+# Sistema / IDE / artefatos locais
+# ============================================================================
+# KDE / Dolphin
+.directory
+# macOS
+.DS_Store
+# Windows
+Thumbs.db
+# JetBrains / IntelliJ
+.idea/
+*.iml
+# VS Code
+.vscode/
+# Rust analyzer
+rust-project.json
+# Vim
+*.swp
+*.swo
+*~
+# Histórico de shell
+.history
+
+# ============================================================================
+# Builds / artefatos
+# ============================================================================
+# Binários compilados avulsos (além do que está em target/)
+*.exe
+*.dll
+*.so
+*.dylib
+
+# ============================================================================
+# Logs e dados locais
+# ============================================================================
+*.log
+logs/
+data/
+backups/
+*.sql.bak
+*.sql.gz
+
+# ============================================================================
+# Arquivos sensíveis
+# ============================================================================
+*.pem
+*.key
+*.crt
+secrets/

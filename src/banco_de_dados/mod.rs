@@ -6,6 +6,7 @@ pub mod cliente;
 pub mod conexao;
 pub mod estoque;
 pub mod init;
+pub mod migrations;
 pub mod orcamento;
 pub mod ordem_servico;
 pub mod servico;

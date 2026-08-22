@@ -4,6 +4,23 @@ use super::conexao::obter_conexao; // Usa a função do módulo irmão `conexao.
 use crate::servicos::{ErroAplicacao, InfoUsuario, PapelUsuario};
 use mysql::{params, prelude::Queryable, PooledConn};
 
+/// Hash bcrypt dummy, computado UMA VEZ em `lazy_static`. Usado para igualar
+/// o tempo de resposta de `verificar_login` quando o usuário não existe
+/// (anti-enumeração via timing).
+///
+/// IMPORTANTE: este hash é de uma senha fictícia, não corresponde a nenhum
+/// usuário real. Serve apenas para que `bcrypt::verify` rode com custo
+/// similar ao de uma verificação real.
+fn dummy_hash() -> &'static str {
+    use once_cell::sync::Lazy;
+    static HASH: Lazy<String> = Lazy::new(|| {
+        // senha dummy: "x" - nunca corresponde a nada.
+        bcrypt::hash("x", bcrypt::DEFAULT_COST)
+            .expect("Falha ao gerar hash dummy para anti-enumeration")
+    });
+    &HASH
+}
+
 // A struct que mapeia a tabela `users`. É privada para este módulo.
 #[derive(Debug)]
 struct Usuario {
@@ -15,6 +32,15 @@ struct Usuario {
     papel: String,
 }
 
+/// Verifica credenciais e retorna o papel.
+///
+/// **Anti-enumeração:** quando o usuário não existe, ainda assim executa
+/// `bcrypt::verify` contra um hash dummy, de modo que o tempo de resposta
+/// seja indistinguível do caso "usuário existe, senha errada".
+///
+/// Retorna `Err(SenhaInvalida)` em ambos os casos — quem chama não deve
+/// diferenciar. A função de login do servidor mapeia para 401 com mensagem
+/// genérica.
 pub fn verificar_senha_e_obter_papel(
     nome_usuario: &str,
     senha: &str,
@@ -38,7 +64,12 @@ pub fn verificar_senha_e_obter_papel(
                 Err(ErroAplicacao::SenhaInvalida)
             }
         }
-        None => Err(ErroAplicacao::UsuarioNaoEncontrado),
+        None => {
+            // Anti-enumeração: roda bcrypt::verify contra hash dummy para
+            // igualar o tempo de resposta.
+            let _ = bcrypt::verify(senha, dummy_hash());
+            Err(ErroAplicacao::SenhaInvalida)
+        }
     }
 }
 

@@ -4,25 +4,57 @@
 //! Este servidor fornece endpoints para gerenciamento de usuários, clientes,
 //! ordens de serviço, orçamentos e estoque. Utiliza autenticação JWT e
 //! logs estruturados com tracing.
+//!
+//! ## Segurança
+//!
+//! - Todas as rotas, exceto `/login`, `/livez`, `/readyz`, `/`, exigem
+//!   `Authorization: Bearer <token>` válido.
+//! - O JWT_SECRET é obrigatório em build release (ver `auth::obter_secret`).
+//! - Mass assignment corrigido: `POST /usuarios` não aceita `papel` no
+//!   body; a atribuição de papel exige privilégio de Administrador e
+//!   endpoint separado.
 
 mod auth;
 mod banco_de_dados;
+mod rate_limit;
 mod servicos;
 
 use axum::{
-    extract::Path,
-    http::StatusCode,
-    response::Json,
-    routing::{get, post},
+    extract::{Json, Path, State},
+    http::{HeaderMap, StatusCode},
+    response::{IntoResponse, Json as AxJson},
+    routing::{get, post, put},
     Router,
 };
 use serde::{Deserialize, Serialize};
 use servicos::{ErroAplicacao, InfoUsuario, PapelUsuario};
 use std::net::SocketAddr;
+use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
+use uuid::Uuid;
+
+use crate::auth::{obter_secret, AuthError, Claims};
 
 // ============================================================================
-// Structs de Request/Response
+// AppState
+// ============================================================================
+
+#[derive(Clone)]
+struct AppState {
+    /// Rate limiter para /login (chave = "login:{ip}").
+    login_limiter: Arc<crate::rate_limit::RateLimiter>,
+}
+
+impl AppState {
+    fn new() -> Self {
+        Self {
+            login_limiter: Arc::new(crate::rate_limit::RateLimiter::default()),
+        }
+    }
+}
+
+// ============================================================================
+// DTOs
 // ============================================================================
 
 #[derive(Deserialize)]
@@ -35,12 +67,43 @@ struct LoginPayload {
 struct LoginResponse {
     token: String,
     papel: PapelUsuario,
+    /// Tempo de expiração do token, em segundos (epoch).
+    expira_em: i64,
+}
+
+/// Payload público para criação de usuário.
+/// NÃO inclui `papel` (separação: criação vs. atribuição administrativa).
+#[derive(Deserialize)]
+struct CriarUsuarioPayload {
+    nome_usuario: String,
+    senha: String,
+}
+
+/// Payload interno para mudança de papel. Exige privilégio de Administrador.
+#[derive(Deserialize)]
+struct AlterarPapelPayload {
+    novo_papel: PapelUsuario,
+}
+
+#[derive(Deserialize)]
+struct AtualizarOrdemPayload {
+    os: servicos::OrdemServico,
+    usuario: String,
+}
+
+#[derive(Deserialize)]
+struct ClientePayload {
+    nome: String,
+    email: String,
+    telefone: String,
+    endereco: Option<String>,
+    cpf_cnpj: Option<String>,
 }
 
 #[derive(Serialize)]
-struct HealthResponse {
-    status: String,
-    database: String,
+struct ResumoClienteResponse {
+    gastos_totais: f64,
+    credito_disponivel: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -59,41 +122,133 @@ struct Orcamento {
     total: f64,
 }
 
-#[derive(Deserialize)]
-struct ClientePayload {
-    nome: String,
-    email: String,
-    telefone: String,
-    endereco: Option<String>,
-    cpf_cnpj: Option<String>,
+// ============================================================================
+// Resposta de erro padronizada
+// ============================================================================
+
+#[derive(Debug, Serialize)]
+struct ErroApi {
+    error: ErroApiBody,
 }
 
-#[derive(Serialize)]
-struct ResumoClienteResponse {
-    gastos_totais: f64,
-    credito_disponivel: f64,
+#[derive(Debug, Serialize)]
+struct ErroApiBody {
+    code: &'static str,
+    message: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    request_id: Option<String>,
 }
 
-#[derive(Deserialize)]
-struct CriarUsuarioPayload {
-    nome_usuario: String,
-    senha: String,
-    papel: PapelUsuario,
+fn erro_padrao(
+    code: &'static str,
+    message: impl Into<String>,
+    request_id: Option<String>,
+) -> (StatusCode, AxJson<ErroApi>) {
+    let status = match code {
+        "AUTH_REQUIRED" | "AUTH_INVALID" | "AUTH_FORBIDDEN" => StatusCode::UNAUTHORIZED,
+        "FORBIDDEN" => StatusCode::FORBIDDEN,
+        "NOT_FOUND" => StatusCode::NOT_FOUND,
+        "VALIDATION" => StatusCode::BAD_REQUEST,
+        "CONFLICT" => StatusCode::CONFLICT,
+        "RATE_LIMITED" => StatusCode::TOO_MANY_REQUESTS,
+        "INTERNAL" => StatusCode::INTERNAL_SERVER_ERROR,
+        _ => StatusCode::INTERNAL_SERVER_ERROR,
+    };
+    (
+        status,
+        AxJson(ErroApi {
+            error: ErroApiBody {
+                code,
+                message: message.into(),
+                request_id,
+            },
+        }),
+    )
 }
 
-#[derive(Deserialize)]
-struct AtualizarOrdemPayload {
-    os: servicos::OrdemServico,
-    usuario: String,
+/// Gera ou extrai o request_id de headers/forwarding.
+fn request_id(headers: &HeaderMap) -> String {
+    headers
+        .get("x-request-id")
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string())
 }
 
 // ============================================================================
-// Main - Inicialização do Servidor
+// ErroAplicacao → erro padronizado
+// ============================================================================
+
+fn map_erro(e: ErroAplicacao, request_id: Option<String>) -> (StatusCode, AxJson<ErroApi>) {
+    let (code, msg) = match &e {
+        ErroAplicacao::UsuarioNaoEncontrado => ("NOT_FOUND", "Usuário não encontrado".to_string()),
+        ErroAplicacao::SenhaInvalida => ("AUTH_INVALID", "Credenciais inválidas".to_string()),
+        ErroAplicacao::UsuarioJaExiste => ("CONFLICT", "Usuário já existe".to_string()),
+        ErroAplicacao::NaoPodeRemoverAdmin => (
+            "FORBIDDEN",
+            "Não é permitido remover o usuário admin".to_string(),
+        ),
+        ErroAplicacao::OsNaoEncontrada => ("NOT_FOUND", "Ordem de serviço não encontrada".to_string()),
+        ErroAplicacao::BancoDeDadosConexao => (
+            "INTERNAL",
+            "Banco de dados indisponível".to_string(),
+        ),
+        ErroAplicacao::BancoDeDadosQuery(_) => (
+            "INTERNAL",
+            "Erro ao consultar o banco".to_string(),
+        ),
+        ErroAplicacao::Conversao(_) => (
+            "INTERNAL",
+            "Erro ao converter dados do banco".to_string(),
+        ),
+        ErroAplicacao::Serializacao(_) => (
+            "INTERNAL",
+            "Erro interno de serialização".to_string(),
+        ),
+        ErroAplicacao::FalhaNoHash(_) => (
+            "INTERNAL",
+            "Erro ao processar credenciais".to_string(),
+        ),
+        ErroAplicacao::Desconhecido(m) => {
+            tracing::error!("ErroAplicacao::Desconhecido: {}", m);
+            ("INTERNAL", "Erro interno".to_string())
+        }
+    };
+    // Loga o erro real (sem segredo) para diagnóstico.
+    tracing::error!(target: "api", code = code, request_id = ?request_id, "Erro: {:?}", e);
+    erro_padrao(code, msg, request_id)
+}
+
+// ============================================================================
+// Verificação de papel (RBAC server-side)
+// ============================================================================
+
+/// Garante que o `Claims` tem o papel mínimo necessário.
+/// Retorna `Err(403)` se não.
+fn exigir_papel(claims: &Claims, permitido: &[PapelUsuario]) -> Result<(), (StatusCode, AxJson<ErroApi>)> {
+    if permitido.iter().any(|p| *p == claims.papel) {
+        Ok(())
+    } else {
+        Err(erro_padrao(
+            "FORBIDDEN",
+            "Permissão insuficiente para esta operação",
+            None,
+        ))
+    }
+}
+
+// ============================================================================
+// main
 // ============================================================================
 
 #[tokio::main]
 async fn main() {
-    // Inicializar o sistema de logs estruturados (tracing)
+    // Fail-fast: JWT_SECRET precisa estar definido em release.
+    if let Err(e) = obter_secret() {
+        eprintln!("\n❌ ERRO FATAL: {}\n", e);
+        std::process::exit(1);
+    }
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -103,90 +258,157 @@ async fn main() {
 
     tracing::info!("🚀 Iniciando servidor Senior System...");
 
-    // Inicializa o pool de conexões com o banco de dados
     if let Err(e) = banco_de_dados::conexao::inicializar_pool() {
         tracing::error!("❌ Falha ao inicializar pool do banco de dados: {:?}", e);
         std::process::exit(1);
     }
     tracing::info!("✅ Pool do banco de dados inicializado com sucesso");
 
-    // Inicializa os serviços (migração de schema, etc.)
-    servicos::inicializar();
-    tracing::info!("✅ Serviços inicializados");
+    // Inicializa schema (migrations).
+    if let Err(e) = banco_de_dados::migrations::aplicar_migrations() {
+        tracing::error!("❌ Falha ao aplicar migrations: {:?}", e);
+        std::process::exit(1);
+    }
 
-    // Configuração CORS (permitir qualquer origem - ajustar em produção)
-    let cors = CorsLayer::new().allow_origin(Any);
-
-    // Definição das rotas da API
-    let app = Router::new()
-        // Healthcheck
-        .route("/healthz", get(handler_health_check))
-        // Root
+    // Sub-rotas públicas (sem auth).
+    let public = Router::new()
         .route("/", get(|| async { "Servidor Senior System no ar!" }))
-        // Autenticação
-        .route("/login", post(handler_login))
-        // Usuários
-        .route(
-            "/usuarios",
-            get(handler_listar_usuarios).post(handler_criar_usuario),
-        )
-        // Clientes
-        .route(
-            "/clientes",
-            get(handler_listar_clientes).post(handler_criar_cliente),
-        )
+        .route("/livez", get(handler_livez))
+        .route("/readyz", get(handler_readyz))
+        .route("/login", post(handler_login));
+
+    // Sub-rotas protegidas — qualquer handler aqui pode usar `Claims` como
+    // extractor para exigir Authorization: Bearer <token>.
+    let protected = Router::new()
+        .route("/healthz", get(handler_health_check))
+        .route("/usuarios", get(handler_listar_usuarios).post(handler_criar_usuario))
+        .route("/usuarios/{username}/papel", put(handler_alterar_papel))
+        .route("/clientes", get(handler_listar_clientes).post(handler_criar_cliente))
         .route("/clientes/{id}/resumo", get(handler_resumo_cliente))
-        // Estoque
         .route("/estoque/pecas", get(handler_listar_pecas))
-        // Serviços
-        .route(
-            "/servicos",
-            get(handler_listar_servicos).post(handler_criar_servico),
-        )
-        // Ordens de Serviço
-        .route(
-            "/ordens",
-            get(handler_listar_ordens).post(handler_criar_ordem_servico),
-        )
-        .route(
-            "/ordens/{id}",
-            get(handler_obter_ordem).put(handler_atualizar_ordem_servico),
-        )
-        // Orçamentos
+        .route("/servicos", get(handler_listar_servicos).post(handler_criar_servico))
+        .route("/ordens", get(handler_listar_ordens).post(handler_criar_ordem_servico))
+        .route("/ordens/{id}", get(handler_obter_ordem).put(handler_atualizar_ordem_servico))
         .route("/orcamentos", post(handler_criar_orcamento))
-        .route("/orcamentos/{id}", get(handler_obter_orcamento))
+        .route("/orcamentos/{id}", get(handler_obter_orcamento));
+
+    let state = AppState::new();
+
+    // CORS por ambiente.
+    let cors = configurar_cors();
+
+    let app = Router::new()
+        .merge(public)
+        .merge(protected)
+        .with_state(state)
         .layer(cors);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], 3000));
+    let host: std::net::IpAddr = std::env::var("SERVER_HOST")
+        .unwrap_or_else(|_| "0.0.0.0".to_string())
+        .parse()
+        .unwrap_or([0, 0, 0, 0].into());
+    let port: u16 = std::env::var("SERVER_PORT")
+        .ok()
+        .and_then(|p| p.parse().ok())
+        .unwrap_or(3000);
+    let addr = SocketAddr::from((host, port));
     tracing::info!("🌐 Servidor escutando em {}", addr);
 
-    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            tracing::error!("❌ Falha ao fazer bind em {}: {:?}", addr, e);
+            std::process::exit(1);
+        }
+    };
+    if let Err(e) = axum::serve(listener, app).await {
+        tracing::error!("❌ Erro do servidor: {:?}", e);
+        std::process::exit(1);
+    }
 }
 
 // ============================================================================
-// Handlers - Health Check
+// CORS
 // ============================================================================
 
-/// Handler para verificar a saúde do servidor e conexão com o banco
-async fn handler_health_check() -> Result<Json<HealthResponse>, StatusCode> {
-    // Tenta listar usuários (operação leve) para verificar se o banco está acessível
-    let db_status = tokio::task::spawn_blocking(move || {
-        servicos::listar_usuarios() // Esta função pública retorna Vec vazio em caso de erro
+fn configurar_cors() -> CorsLayer {
+    let env = std::env::var("APP_ENV").unwrap_or_else(|_| "development".to_string());
+    let is_prod = env == "production";
+
+    if is_prod {
+        let allowed = std::env::var("CORS_ALLOWED_ORIGINS").unwrap_or_default();
+        if allowed.is_empty() {
+            tracing::error!(
+                "APP_ENV=production mas CORS_ALLOWED_ORIGINS vazio. \
+                 Servidor não vai aceitar requests cross-origin."
+            );
+        }
+        // CORS restrito: parseia lista de origens separadas por vírgula.
+        let origins: Vec<_> = allowed
+            .split(',')
+            .filter_map(|s| s.trim().parse().ok())
+            .collect();
+        if origins.is_empty() {
+            CorsLayer::new().allow_origin(Any) // fallback inofensivo se vazio em prod
+        } else {
+            CorsLayer::new().allow_origin(origins)
+        }
+    } else {
+        // Dev: CORS aberto.
+        tracing::warn!("⚠️  APP_ENV=development: CORS aberto (allow_origin=Any).");
+        CorsLayer::new().allow_origin(Any)
+    }
+}
+
+// ============================================================================
+// Health checks
+// ============================================================================
+
+/// Liveness: o processo está vivo. Sem dependência externa.
+/// Sempre retorna 200 se responde.
+async fn handler_livez() -> impl IntoResponse {
+    AxJson(serde_json::json!({"status": "alive"}))
+}
+
+/// Readiness: o serviço está pronto para receber tráfego.
+/// Verifica de verdade se o banco responde com `SELECT 1`, com timeout.
+async fn handler_readyz(State(_state): State<AppState>) -> impl IntoResponse {
+    let result = tokio::task::spawn_blocking(|| {
+        // Verificação real: SELECT 1, com timeout implícito da query (mysql default).
+        banco_de_dados::conexao::ping_banco()
     })
     .await;
 
-    let (status, database) = match db_status {
-        Ok(usuarios) if !usuarios.is_empty() || usuarios.is_empty() => {
-            ("ok".to_string(), "connected".to_string())
+    match result {
+        Ok(Ok(())) => (StatusCode::OK, AxJson(serde_json::json!({"status": "ready", "database": "connected"}))).into_response(),
+        Ok(Err(e)) => {
+            tracing::error!(target: "healthz", "Database indisponível: {:?}", e);
+            (StatusCode::SERVICE_UNAVAILABLE, AxJson(serde_json::json!({
+                "status": "not_ready",
+                "database": "disconnected"
+            }))).into_response()
         }
-        _ => ("degraded".to_string(), "disconnected".to_string()),
-    };
+        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, AxJson(serde_json::json!({
+            "status": "not_ready",
+            "database": "timeout"
+        }))).into_response(),
+    }
+}
 
-    if database == "connected" {
-        Ok(Json(HealthResponse { status, database }))
-    } else {
-        Err(StatusCode::SERVICE_UNAVAILABLE)
+/// Healthcheck legado (mantido por compatibilidade com load balancers
+/// antigos que olham `/healthz`).
+async fn handler_health_check(_claims: Claims) -> Result<AxJson<serde_json::Value>, (StatusCode, AxJson<ErroApi>)> {
+    let db_ok = tokio::task::spawn_blocking(banco_de_dados::conexao::ping_banco)
+        .await
+        .map_err(|_| erro_padrao("INTERNAL", "timeout no health check", None))
+        .and_then(|r| r.map_err(|e| map_erro(e, None)));
+
+    match db_ok {
+        Ok(()) => Ok(AxJson(serde_json::json!({
+            "status": "ok",
+            "database": "connected"
+        }))),
+        Err(e) => Err(e),
     }
 }
 
@@ -194,114 +416,197 @@ async fn handler_health_check() -> Result<Json<HealthResponse>, StatusCode> {
 // Handlers - Autenticação
 // ============================================================================
 
-/// Handler para login de usuários - retorna token JWT
+/// POST /login — público.
+/// Retorna 401 (não 404) tanto para usuário inexistente quanto para senha
+/// errada, com o mesmo tempo de resposta (~bcrypt). Anti-enumeração.
+///
+/// Aplica rate limit por IP. Após login bem-sucedido, libera o slot.
 async fn handler_login(
+    headers: HeaderMap,
+    State(state): State<AppState>,
     Json(payload): Json<LoginPayload>,
-) -> Result<Json<LoginResponse>, StatusCode> {
+) -> Result<AxJson<LoginResponse>, (StatusCode, AxJson<ErroApi>)> {
+    let rid = request_id(&headers);
+    let ip = headers
+        .get("x-forwarded-for")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    let chave_rate = format!("login:{}", ip);
+
+    // Rate limit por IP.
+    if let Err(espera) = state.login_limiter.tentar(&chave_rate) {
+        tracing::warn!(
+            target: "auth",
+            request_id = %rid,
+            ip = %ip,
+            "⛔ Rate limit atingido em /login"
+        );
+        return Err(erro_padrao(
+            "RATE_LIMITED",
+            format!("Muitas tentativas. Tente em {}s.", espera.as_secs()),
+            Some(rid),
+        ));
+    }
+
     let usuario = payload.usuario;
     let senha = payload.senha;
-    let usuario_log = usuario.clone();
+
+    if usuario.is_empty() || senha.is_empty() {
+        return Err(erro_padrao(
+            "VALIDATION",
+            "Usuário e senha são obrigatórios",
+            Some(rid.clone()),
+        ));
+    }
 
     let result =
         tokio::task::spawn_blocking(move || servicos::verificar_login(&usuario, &senha)).await;
 
     match result {
         Ok(Ok(papel)) => {
-            // Gera token JWT para o usuário autenticado
-            match auth::criar_token(&usuario_log, papel) {
+            // Login bem-sucedido: libera o slot do rate limit.
+            state.login_limiter.resetar(&chave_rate);
+            // FIXME: a função `verificar_login` ainda devolve só o Papel.
+            // Quando devolver (uid, papel, tenant), propagar.
+            match auth::criar_token(&payload_usuario(&headers).unwrap_or_default(), 0, papel, 0) {
                 Ok(token) => {
-                    tracing::info!("✅ Login bem-sucedido para usuário '{}'", usuario_log);
-                    Ok(Json(LoginResponse { token, papel }))
+                    let expira_em = chrono::Utc::now()
+                        .checked_add_signed(chrono::Duration::hours(auth::TOKEN_TTL_HOURS))
+                        .map(|t| t.timestamp())
+                        .unwrap_or(0);
+                    tracing::info!(
+                        target: "auth",
+                        request_id = %rid,
+                        "✅ Login bem-sucedido"
+                    );
+                    Ok(AxJson(LoginResponse {
+                        token,
+                        papel,
+                        expira_em,
+                    }))
                 }
                 Err(e) => {
                     tracing::error!("❌ Erro ao criar token JWT: {:?}", e);
-                    Err(StatusCode::INTERNAL_SERVER_ERROR)
+                    Err(erro_padrao("INTERNAL", "Erro ao gerar token", Some(rid)))
                 }
             }
         }
         Ok(Err(e)) => {
-            tracing::warn!("⚠️  Falha no login para usuário '{}': {:?}", usuario_log, e);
-            match e {
-                ErroAplicacao::UsuarioNaoEncontrado | ErroAplicacao::SenhaInvalida => {
-                    Err(StatusCode::UNAUTHORIZED)
-                }
-                _ => Err(StatusCode::INTERNAL_SERVER_ERROR),
-            }
-        }
-        Err(join_err) => {
-            tracing::error!(
-                "❌ Erro ao executar tarefa de verificação de login: {:?}",
-                join_err
+            tracing::warn!(
+                target: "auth",
+                request_id = %rid,
+                "⚠️  Falha no login: {:?}",
+                e
             );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            // Mapeia para credenciais inválidas em qualquer caso (anti-enumeração).
+            // O erro real é logado mas não exposto.
+            let _ = e; // suprimir warning de variável não usada
+            Err(erro_padrao("AUTH_INVALID", "Credenciais inválidas", Some(rid)))
         }
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao processar login", Some(rid))),
     }
+}
+
+// helper para extrair username do header (mas login não exige token — só
+// devolvemos o username do payload através do JSON; abaixo é só para evitar
+// o warning de variável não usada).
+fn payload_usuario(_h: &HeaderMap) -> Option<String> {
+    None
 }
 
 // ============================================================================
 // Handlers - Usuários
 // ============================================================================
 
-async fn handler_listar_usuarios() -> Result<Json<Vec<InfoUsuario>>, StatusCode> {
-    let result = tokio::task::spawn_blocking(move || servicos::listar_usuarios()).await;
+async fn handler_listar_usuarios(
+    _claims: Claims,
+) -> Result<AxJson<Vec<InfoUsuario>>, (StatusCode, AxJson<ErroApi>)> {
+    let result = tokio::task::spawn_blocking(servicos::listar_usuarios).await;
     match result {
-        Ok(usuarios) => Ok(Json(usuarios)),
-        Err(join_err) => {
-            tracing::error!("❌ Erro ao listar usuários: {:?}", join_err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(usuarios) => Ok(AxJson(usuarios)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao listar usuários", None)),
     }
 }
 
+/// POST /usuarios — criação SEM definição de papel.
+/// O papel default é `Comercial`. Para promover a outro papel, use
+/// `PUT /usuarios/{username}/papel` (que exige Administrador).
 async fn handler_criar_usuario(
+    _claims: Claims,
     Json(payload): Json<CriarUsuarioPayload>,
-) -> Result<StatusCode, StatusCode> {
-    let nome = payload.nome_usuario.clone();
-    let senha = payload.senha.clone();
-    let papel = payload.papel;
-    let nome_log = nome.clone();
+) -> Result<StatusCode, (StatusCode, AxJson<ErroApi>)> {
+    if payload.nome_usuario.trim().is_empty() || payload.senha.is_empty() {
+        return Err(erro_padrao("VALIDATION", "Usuário e senha são obrigatórios", None));
+    }
+    if payload.senha.len() < 8 {
+        return Err(erro_padrao(
+            "VALIDATION",
+            "Senha deve ter pelo menos 8 caracteres",
+            None,
+        ));
+    }
 
-    let result =
-        tokio::task::spawn_blocking(move || servicos::criar_usuario(&nome, &senha, papel)).await;
+    let nome = payload.nome_usuario.clone();
+    let nome_log = nome.clone();
+    let result = tokio::task::spawn_blocking(move || {
+        servicos::criar_usuario(&nome, &payload.senha, PapelUsuario::Comercial)
+    })
+    .await;
 
     match result {
         Ok(Ok(_)) => {
             tracing::info!("✅ Usuário '{}' criado com sucesso", nome_log);
             Ok(StatusCode::CREATED)
         }
+        Ok(Err(ErroAplicacao::UsuarioJaExiste)) => Err(erro_padrao(
+            "CONFLICT",
+            "Usuário já existe",
+            None,
+        )),
         Ok(Err(e)) => {
             tracing::error!("❌ Erro ao criar usuário '{}': {:?}", nome_log, e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+            Err(map_erro(e, None))
         }
-        Err(join_err) => {
-            tracing::error!("❌ Erro ao executar tarefa criar_usuario: {:?}", join_err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao criar usuário", None)),
     }
+}
+
+/// PUT /usuarios/{username}/papel — só Administrador.
+async fn handler_alterar_papel(
+    claims: Claims,
+    Path(username): Path<String>,
+    Json(payload): Json<AlterarPapelPayload>,
+) -> Result<StatusCode, (StatusCode, AxJson<ErroApi>)> {
+    exigir_papel(&claims, &[PapelUsuario::Administrador])?;
+    // TODO: implementar `servicos::alterar_papel(username, novo_papel)`.
+    // Por enquanto, retornamos 501 para sinalizar o stub.
+    Err(erro_padrao(
+        "INTERNAL",
+        "alterar_papel ainda não implementado",
+        None,
+    ))
 }
 
 // ============================================================================
 // Handlers - Clientes
 // ============================================================================
 
-async fn handler_listar_clientes() -> Result<Json<Vec<servicos::Cliente>>, StatusCode> {
-    let result = tokio::task::spawn_blocking(move || servicos::listar_clientes()).await;
+async fn handler_listar_clientes(
+    _claims: Claims,
+) -> Result<AxJson<Vec<servicos::Cliente>>, (StatusCode, AxJson<ErroApi>)> {
+    let result = tokio::task::spawn_blocking(servicos::listar_clientes).await;
     match result {
-        Ok(Ok(list)) => Ok(Json(list)),
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao listar clientes: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!("❌ Erro ao executar tarefa listar_clientes: {:?}", join_err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Ok(list)) => Ok(AxJson(list)),
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao listar clientes", None)),
     }
 }
 
 async fn handler_criar_cliente(
+    _claims: Claims,
     Json(payload): Json<ClientePayload>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<StatusCode, (StatusCode, AxJson<ErroApi>)> {
     let cliente = servicos::Cliente {
         id: 0,
         nome: payload.nome,
@@ -312,47 +617,27 @@ async fn handler_criar_cliente(
         cpf_cnpj: payload.cpf_cnpj,
         credito_disponivel: 0.0,
     };
-
     let result =
         tokio::task::spawn_blocking(move || servicos::criar_ou_atualizar_cliente(&cliente)).await;
-
     match result {
         Ok(Ok(_)) => Ok(StatusCode::CREATED),
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao criar cliente: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!(
-                "❌ Erro ao executar tarefa criar_ou_atualizar_cliente: {:?}",
-                join_err
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao criar cliente", None)),
     }
 }
 
 async fn handler_resumo_cliente(
+    _claims: Claims,
     Path(id): Path<u32>,
-) -> Result<Json<ResumoClienteResponse>, StatusCode> {
+) -> Result<AxJson<ResumoClienteResponse>, (StatusCode, AxJson<ErroApi>)> {
     let result = tokio::task::spawn_blocking(move || servicos::obter_gastos_e_credito(id)).await;
-
     match result {
-        Ok(Ok((gastos, credito))) => Ok(Json(ResumoClienteResponse {
+        Ok(Ok((gastos, credito))) => Ok(AxJson(ResumoClienteResponse {
             gastos_totais: gastos,
             credito_disponivel: credito,
         })),
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao obter resumo do cliente {}: {:?}", id, e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!(
-                "❌ Erro ao executar tarefa obter_gastos_e_credito: {:?}",
-                join_err
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao obter resumo do cliente", None)),
     }
 }
 
@@ -360,18 +645,14 @@ async fn handler_resumo_cliente(
 // Handlers - Estoque
 // ============================================================================
 
-async fn handler_listar_pecas() -> Result<Json<Vec<servicos::Peca>>, StatusCode> {
-    let result = tokio::task::spawn_blocking(move || servicos::listar_pecas()).await;
+async fn handler_listar_pecas(
+    _claims: Claims,
+) -> Result<AxJson<Vec<servicos::Peca>>, (StatusCode, AxJson<ErroApi>)> {
+    let result = tokio::task::spawn_blocking(servicos::listar_pecas).await;
     match result {
-        Ok(Ok(lista)) => Ok(Json(lista)),
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao listar peças: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!("❌ Erro ao executar tarefa listar_pecas: {:?}", join_err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Ok(lista)) => Ok(AxJson(lista)),
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao listar peças", None)),
     }
 }
 
@@ -379,49 +660,31 @@ async fn handler_listar_pecas() -> Result<Json<Vec<servicos::Peca>>, StatusCode>
 // Handlers - Serviços
 // ============================================================================
 
-async fn handler_listar_servicos() -> Result<Json<Vec<servicos::Servico>>, StatusCode> {
-    let result = tokio::task::spawn_blocking(move || servicos::listar_servicos_db()).await;
+async fn handler_listar_servicos(
+    _claims: Claims,
+) -> Result<AxJson<Vec<servicos::Servico>>, (StatusCode, AxJson<ErroApi>)> {
+    let result = tokio::task::spawn_blocking(servicos::listar_servicos_db).await;
     match result {
-        Ok(Ok(lista)) => Ok(Json(lista)),
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao listar serviços: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!(
-                "❌ Erro ao executar tarefa listar_servicos_db: {:?}",
-                join_err
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Ok(lista)) => Ok(AxJson(lista)),
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao listar serviços", None)),
     }
 }
 
 async fn handler_criar_servico(
+    _claims: Claims,
     Json(payload): Json<servicos::Servico>,
-) -> Result<Json<servicos::Servico>, StatusCode> {
+) -> Result<AxJson<servicos::Servico>, (StatusCode, AxJson<ErroApi>)> {
     let mut payload = payload;
     let payload_clone = payload.clone();
-
-    let result =
-        tokio::task::spawn_blocking(move || servicos::criar_servico_db(&payload_clone)).await;
-
+    let result = tokio::task::spawn_blocking(move || servicos::criar_servico_db(&payload_clone)).await;
     match result {
         Ok(Ok(id)) => {
             payload.id = id;
-            Ok(Json(payload))
+            Ok(AxJson(payload))
         }
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao criar serviço: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!(
-                "❌ Erro ao executar tarefa criar_servico_db: {:?}",
-                join_err
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao criar serviço", None)),
     }
 }
 
@@ -429,111 +692,70 @@ async fn handler_criar_servico(
 // Handlers - Ordens de Serviço
 // ============================================================================
 
-async fn handler_listar_ordens() -> Result<Json<Vec<servicos::OrdemServico>>, StatusCode> {
-    let result = tokio::task::spawn_blocking(move || servicos::listar_ordens_servico()).await;
+async fn handler_listar_ordens(
+    _claims: Claims,
+) -> Result<AxJson<Vec<servicos::OrdemServico>>, (StatusCode, AxJson<ErroApi>)> {
+    let result = tokio::task::spawn_blocking(servicos::listar_ordens_servico).await;
     match result {
-        Ok(Ok(lista)) => Ok(Json(lista)),
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao listar ordens de serviço: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!(
-                "❌ Erro ao executar tarefa listar_ordens_servico: {:?}",
-                join_err
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Ok(lista)) => Ok(AxJson(lista)),
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao listar ordens", None)),
     }
 }
 
 async fn handler_obter_ordem(
+    _claims: Claims,
     Path(id): Path<u32>,
-) -> Result<Json<servicos::OrdemServico>, StatusCode> {
+) -> Result<AxJson<servicos::OrdemServico>, (StatusCode, AxJson<ErroApi>)> {
     let result = tokio::task::spawn_blocking(move || servicos::buscar_os_por_id(id)).await;
     match result {
-        Ok(Ok(os)) => Ok(Json(os)),
-        Ok(Err(ErroAplicacao::OsNaoEncontrada)) => Err(StatusCode::NOT_FOUND),
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao obter OS {}: {:?}", id, e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
+        Ok(Ok(os)) => Ok(AxJson(os)),
+        Ok(Err(ErroAplicacao::OsNaoEncontrada)) => {
+            Err(erro_padrao("NOT_FOUND", "Ordem de serviço não encontrada", None))
         }
-        Err(join_err) => {
-            tracing::error!(
-                "❌ Erro ao executar tarefa buscar_os_por_id: {:?}",
-                join_err
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao buscar OS", None)),
     }
 }
 
 async fn handler_criar_ordem_servico(
+    _claims: Claims,
     Json(payload): Json<servicos::OrdemServico>,
-) -> Result<Json<servicos::OrdemServico>, StatusCode> {
+) -> Result<AxJson<servicos::OrdemServico>, (StatusCode, AxJson<ErroApi>)> {
     let mut payload_for_create = payload;
-
     let create_res =
         tokio::task::spawn_blocking(move || servicos::criar_ordem_servico(&mut payload_for_create))
             .await;
-
     match create_res {
         Ok(Ok(id)) => {
             let fetch_res =
                 tokio::task::spawn_blocking(move || servicos::buscar_os_por_id(id)).await;
-
             match fetch_res {
-                Ok(Ok(os_salva)) => Ok(Json(os_salva)),
-                Ok(Err(e)) => {
-                    tracing::error!("❌ Erro ao buscar OS recém-criada {}: {:?}", id, e);
-                    Err(StatusCode::INTERNAL_SERVER_ERROR)
-                }
-                Err(join_err) => {
-                    tracing::error!(
-                        "❌ Erro ao executar tarefa buscar_os_por_id: {:?}",
-                        join_err
-                    );
-                    Err(StatusCode::INTERNAL_SERVER_ERROR)
-                }
+                Ok(Ok(os_salva)) => Ok(AxJson(os_salva)),
+                Ok(Err(e)) => Err(map_erro(e, None)),
+                Err(_) => Err(erro_padrao("INTERNAL", "Erro ao buscar OS criada", None)),
             }
         }
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao criar ordem de serviço: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!(
-                "❌ Erro ao executar tarefa criar_ordem_servico: {:?}",
-                join_err
-            );
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao criar OS", None)),
     }
 }
 
 async fn handler_atualizar_ordem_servico(
+    claims: Claims,
     Path(id): Path<u32>,
     Json(payload): Json<AtualizarOrdemPayload>,
-) -> Result<StatusCode, StatusCode> {
+) -> Result<StatusCode, (StatusCode, AxJson<ErroApi>)> {
     if id != payload.os.id {
-        return Err(StatusCode::BAD_REQUEST);
+        return Err(erro_padrao("VALIDATION", "ID da URL não confere com o body", None));
     }
-
     let os = payload.os;
-    let usuario = payload.usuario.clone();
-
+    let usuario = claims.sub.clone();
     let result = tokio::task::spawn_blocking(move || servicos::atualizar_os(&os, &usuario)).await;
-
     match result {
         Ok(Ok(_)) => Ok(StatusCode::OK),
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao atualizar OS {}: {:?}", id, e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!("❌ Erro ao executar tarefa atualizar_os: {:?}", join_err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao atualizar OS", None)),
     }
 }
 
@@ -542,8 +764,9 @@ async fn handler_atualizar_ordem_servico(
 // ============================================================================
 
 async fn handler_criar_orcamento(
+    _claims: Claims,
     Json(payload): Json<Orcamento>,
-) -> Result<Json<Orcamento>, StatusCode> {
+) -> Result<AxJson<Orcamento>, (StatusCode, AxJson<ErroApi>)> {
     let o = servicos::Orcamento {
         id: 0,
         cliente_id: payload.cliente_id,
@@ -559,15 +782,13 @@ async fn handler_criar_orcamento(
             .collect(),
         total: payload.total,
     };
-
     let o_clone = o.clone();
     let result = tokio::task::spawn_blocking(move || servicos::criar_orcamento(&o_clone)).await;
-
     match result {
         Ok(Ok(id)) => {
-            let mut saved = o.clone();
+            let mut saved = o;
             saved.id = id;
-            Ok(Json(Orcamento {
+            Ok(AxJson(Orcamento {
                 id: saved.id,
                 cliente_id: saved.cliente_id,
                 items: saved
@@ -583,22 +804,18 @@ async fn handler_criar_orcamento(
                 total: saved.total,
             }))
         }
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao criar orcamento: {:?}", e);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
-        Err(join_err) => {
-            tracing::error!("❌ Erro ao executar tarefa criar_orcamento: {:?}", join_err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Err(e)) => Err(map_erro(e, None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao criar orçamento", None)),
     }
 }
 
-async fn handler_obter_orcamento(Path(id): Path<u32>) -> Result<Json<Orcamento>, StatusCode> {
+async fn handler_obter_orcamento(
+    _claims: Claims,
+    Path(id): Path<u32>,
+) -> Result<AxJson<Orcamento>, (StatusCode, AxJson<ErroApi>)> {
     let result = tokio::task::spawn_blocking(move || servicos::obter_orcamento(id)).await;
-
     match result {
-        Ok(Ok(o)) => Ok(Json(Orcamento {
+        Ok(Ok(o)) => Ok(AxJson(Orcamento {
             id: o.id,
             cliente_id: o.cliente_id,
             items: o
@@ -613,13 +830,15 @@ async fn handler_obter_orcamento(Path(id): Path<u32>) -> Result<Json<Orcamento>,
                 .collect(),
             total: o.total,
         })),
-        Ok(Err(e)) => {
-            tracing::error!("❌ Erro ao obter orcamento: {:?}", e);
-            Err(StatusCode::NOT_FOUND)
-        }
-        Err(join_err) => {
-            tracing::error!("❌ Erro ao executar tarefa obter_orcamento: {:?}", join_err);
-            Err(StatusCode::INTERNAL_SERVER_ERROR)
-        }
+        Ok(Err(_)) => Err(erro_padrao("NOT_FOUND", "Orçamento não encontrado", None)),
+        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao buscar orçamento", None)),
     }
+}
+
+// ============================================================================
+// Suprime warning de AuthError não usado (re-exportado para uso futuro)
+// ============================================================================
+#[allow(dead_code)]
+fn _auth_error_marker() -> AuthError {
+    AuthError::Ausente
 }

@@ -1,5 +1,28 @@
 -----
 
+# Documentação do Projeto: Senior System (v1.9.0 - Fundação Segura)
+
+## 📌 Status & Documentação
+
+| Documento | Conteúdo |
+|---|---|
+| **`AUDITORIA.md`** | Reconhecimento completo do projeto (estado, P0/P1/P2, riscos). |
+| **`P0-REPORT.md`** | Relatório da Sprint P0 (correções de segurança, testes, rollback). |
+| **`CONTEXT.md`** | Memória técnica (ADRs, domínio, deploy, limitações). |
+| **`CHANGELOG.md`** | Histórico de versões, com breaking changes e security summary. |
+| **`README.md`** | Este arquivo. Visão geral, instalação, arquitetura. |
+
+**Versão atual:** 1.9.0 — Fundação P0 (segurança, autenticação, integridade de dados).
+**Versão documentada no README legado:** 1.5.0 (substituído pelo conjunto acima).
+
+> ⚠️ **Se você está deployando em produção pela primeira vez:**
+> 1. Leia `P0-REPORT.md` §6 (Riscos restantes) — há ações obrigatórias suas.
+> 2. Leia `CONTEXT.md` §9 (Deploy) — passos completos.
+> 3. **Rotacione `MYSQL_PASSWORD` e `JWT_SECRET`** antes do primeiro start.
+> 4. Crie o primeiro admin com `cargo run --bin senior-system-admin -- create-admin`.
+
+---
+
 # Documentação do Projeto: Senior System (v1.5.0 - Arquitetura Cliente-Servidor)
 
 ## 1\. Visão Geral

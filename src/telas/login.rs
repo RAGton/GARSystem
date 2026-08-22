@@ -1,5 +1,6 @@
 // src/telas/login.rs
 
+use crate::http_client::{STORAGE_KEY_PAPEL, STORAGE_KEY_TOKEN};
 use crate::servicos::{ErroAplicacao, PapelUsuario};
 use eframe::egui::{self, Align2, Color32, TextureHandle};
 use serde::Deserialize;
@@ -16,7 +17,10 @@ pub enum EstadoLogin {
 
 #[derive(Deserialize)]
 struct LoginResponse {
+    token: String,
     papel: PapelUsuario,
+    #[allow(dead_code)]
+    expira_em: i64,
 }
 
 pub struct TelaLogin {
@@ -26,13 +30,15 @@ pub struct TelaLogin {
     last_lembrar: bool,
     estado: Arc<Mutex<EstadoLogin>>,
     endereco_servidor: Arc<Mutex<String>>,
+    /// Token JWT. Setado após login bem-sucedido e persistido no storage.
+    token_jwt: Arc<Mutex<Option<String>>>,
     ir_para_configuracao: bool,
 }
 
 impl TelaLogin {
-    // Assinatura atualizada
     pub fn new(
         endereco_servidor: Arc<Mutex<String>>,
+        token_jwt: Arc<Mutex<Option<String>>>,
         nome_usuario: String,
         lembrar_usuario: bool,
     ) -> Self {
@@ -43,6 +49,7 @@ impl TelaLogin {
             last_lembrar: lembrar_usuario,
             estado: Arc::new(Mutex::new(EstadoLogin::Ocioso)),
             endereco_servidor,
+            token_jwt,
             ir_para_configuracao: false,
         }
     }
@@ -328,14 +335,18 @@ impl TelaLogin {
         let senha_clone = self.senha.clone();
         let ctx_clone = ctx.clone();
         let endereco_servidor = self.endereco_servidor.lock().unwrap().clone();
+        let token_jwt_clone = self.token_jwt.clone();
 
         // Use o executor compartilhado para evitar spawn ilimitado de threads.
         crate::executor::spawn(move || {
             let url = format!("{}/login", endereco_servidor);
-            let client = crate::http_client::get_client();
-            let response = client
+            let body = serde_json::json!({
+                "usuario": nome_usuario_clone,
+                "senha": senha_clone,
+            });
+            let response = crate::http_client::get_client()
                 .post(&url)
-                .json(&serde_json::json!({ "usuario": nome_usuario_clone, "senha": senha_clone }))
+                .json(&body)
                 .timeout(Duration::from_secs(5))
                 .send();
 
@@ -344,7 +355,15 @@ impl TelaLogin {
                 Ok(res) => {
                     if res.status().is_success() {
                         match res.json::<LoginResponse>() {
-                            Ok(login_res) => EstadoLogin::Sucesso(login_res.papel),
+                            Ok(login_res) => {
+                                // ✅ LOGIN OK: guarda o token em memória. O
+                                // aplicacao.rs cuida da persistência no storage
+                                // quando detecta o estado `Sucesso`.
+                                if let Ok(mut g) = token_jwt_clone.lock() {
+                                    *g = Some(login_res.token.clone());
+                                }
+                                EstadoLogin::Sucesso(login_res.papel)
+                            }
                             Err(e) => EstadoLogin::Falha {
                                 titulo: "Erro de Resposta".to_string(),
                                 mensagem: format!(
@@ -354,6 +373,7 @@ impl TelaLogin {
                             },
                         }
                     } else {
+                        // Anti-enumeração: mesma mensagem para qualquer 4xx do login.
                         EstadoLogin::Falha {
                             titulo: "Erro de Autenticação".to_string(),
                             mensagem: "Usuário ou senha inválidos.".to_string(),

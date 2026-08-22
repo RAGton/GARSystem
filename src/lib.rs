@@ -11,4 +11,5 @@
 pub mod banco_de_dados;
 pub mod executor;
 pub mod http_client;
+pub mod rate_limit;
 pub mod servicos;

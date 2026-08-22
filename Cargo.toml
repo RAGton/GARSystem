@@ -14,6 +14,10 @@ path = "src/main.rs"
 name = "senior-system-server"
 path = "src/server.rs"
 
+[[bin]]
+name = "senior-system-admin"
+path = "src/bin/admin_cli.rs"
+
 # ==========================================================
 # Dependências
 # ==========================================================
@@ -45,6 +49,7 @@ dotenvy = "0.15"
 jsonwebtoken = "9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.10", features = ["v4"] }
 
 # --- Dependências de Banco de Dados e Criptografia ---
 # Versão fixada para estabilidade

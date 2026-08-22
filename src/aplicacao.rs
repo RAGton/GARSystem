@@ -69,6 +69,10 @@ pub struct AplicativoPrincipal {
     logo_data: Option<ColorImage>,
     endereco_servidor: Arc<Mutex<String>>,
     usuario_logado: Option<String>,
+    /// Token JWT do usuário logado. Compartilhado com as telas
+    /// via `Arc<Mutex<Option<String>>>` para que cada uma possa
+    /// enviar como `Authorization: Bearer ...`.
+    token_jwt: Arc<Mutex<Option<String>>>,
     // Quando preenchido, exibe a tela de criação de OS como janela flutuante
     overlay_criar_os: Option<TelaCriarOs>,
     evento_tx: Sender<AppEvent>,
@@ -120,11 +124,17 @@ impl AplicativoPrincipal {
         }
 
         let endereco_servidor = Arc::new(Mutex::new(endereco_servidor_str));
+        let token_jwt_inicial = cc
+            .storage
+            .and_then(|s| s.get_string(crate::http_client::STORAGE_KEY_TOKEN))
+            .filter(|t| !t.is_empty());
+        let token_jwt = Arc::new(Mutex::new(token_jwt_inicial));
 
         let (tx, rx) = mpsc::channel::<AppEvent>();
 
         let estado_tela = Some(EstadoTela::Login(TelaLogin::new(
             Arc::clone(&endereco_servidor),
+            Arc::clone(&token_jwt),
             nome_usuario,
             lembrar_usuario,
         )));
@@ -141,11 +151,17 @@ impl AplicativoPrincipal {
             logo: None,
             logo_data,
             endereco_servidor,
+            token_jwt,
             overlay_criar_os: None,
             usuario_logado: None,
             evento_tx: tx,
             evento_rx: rx,
         }
+    }
+
+    /// Atalho para o token atual (clona a Option<String>).
+    pub fn token_atual(&self) -> Option<String> {
+        self.token_jwt.lock().ok().and_then(|g| g.clone())
     }
 }
 
@@ -197,6 +213,19 @@ impl eframe::App for AplicativoPrincipal {
                         // Persistir o estado 'lembrar usuário' quando o login for bem sucedido
                         if let Some(storage) = frame.storage_mut() {
                             tela.salvar_estado_login(storage);
+                            // Persiste o token JWT + papel para sobreviver a restart do app.
+                            if let Ok(g) = self.token_jwt.lock() {
+                                if let Some(t) = g.as_ref() {
+                                    storage.set_string(
+                                        crate::http_client::STORAGE_KEY_TOKEN,
+                                        t.clone(),
+                                    );
+                                }
+                            }
+                            storage.set_string(
+                                crate::http_client::STORAGE_KEY_PAPEL,
+                                format!("{:?}", papel),
+                            );
                         }
                         login_sucesso = Some(papel);
                         self.usuario_logado = Some(tela.nome_usuario_atual().to_string());
@@ -229,6 +258,7 @@ impl eframe::App for AplicativoPrincipal {
                             proximo_estado = Some(
                                 TelaLogin::new(
                                     Arc::clone(&self.endereco_servidor),
+                                    Arc::clone(&self.token_jwt),
                                     nome_usuario,
                                     lembrar_usuario,
                                 )
@@ -238,6 +268,7 @@ impl eframe::App for AplicativoPrincipal {
                             proximo_estado = Some(
                                 TelaLogin::new(
                                     Arc::clone(&self.endereco_servidor),
+                                    Arc::clone(&self.token_jwt),
                                     String::new(),
                                     false,
                                 )
@@ -296,6 +327,7 @@ impl eframe::App for AplicativoPrincipal {
                 self.estado_tela = Some(
                     TelaLogin::new(
                         Arc::clone(&self.endereco_servidor),
+                        Arc::clone(&self.token_jwt),
                         nome_usuario,
                         lembrar_usuario,
                     )
@@ -303,8 +335,13 @@ impl eframe::App for AplicativoPrincipal {
                 );
             } else {
                 self.estado_tela = Some(
-                    TelaLogin::new(Arc::clone(&self.endereco_servidor), String::new(), false)
-                        .into(),
+                    TelaLogin::new(
+                        Arc::clone(&self.endereco_servidor),
+                        Arc::clone(&self.token_jwt),
+                        String::new(),
+                        false,
+                    )
+                    .into(),
                 );
             }
         }
@@ -433,7 +470,11 @@ impl AplicativoPrincipal {
                             TelaClientes::new(Arc::clone(&self.endereco_servidor)).into()
                         }
                         TelaAtiva::Admin => {
-                            TelaAdmin::new(Arc::clone(&self.endereco_servidor)).into()
+                            TelaAdmin::new(
+                                Arc::clone(&self.endereco_servidor),
+                                Arc::clone(&self.token_jwt),
+                            )
+                            .into()
                         }
                         TelaAtiva::Tecnico => {
                             TelaTecnico::new(Arc::clone(&self.endereco_servidor)).into()
@@ -488,10 +529,21 @@ impl AplicativoPrincipal {
         }
     }
 
+    /// Limpa o token JWT, o papel e o usuário, voltando para a tela de login.
+    /// Chamado quando o usuário faz logout ou o token expira.
     fn deslogar(&mut self, ctx: &egui::Context) {
+        // Limpa o token da memória.
+        if let Ok(mut g) = self.token_jwt.lock() {
+            *g = None;
+        }
         self.papel_usuario_logado = None;
         self.usuario_logado = None;
-        self.estado_tela = None;
+        self.estado_tela = Some(EstadoTela::Login(TelaLogin::new(
+            Arc::clone(&self.endereco_servidor),
+            Arc::clone(&self.token_jwt),
+            String::new(),
+            true,
+        )));
         ctx.send_viewport_cmd(egui::ViewportCommand::Resizable(false));
         ctx.send_viewport_cmd(egui::ViewportCommand::MinInnerSize([0.0, 0.0].into()));
         ctx.send_viewport_cmd(egui::ViewportCommand::InnerSize([800.0, 600.0].into()));

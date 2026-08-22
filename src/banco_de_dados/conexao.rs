@@ -2,6 +2,7 @@
 
 use crate::servicos::ErroAplicacao;
 use dotenvy::dotenv;
+use mysql::prelude::Queryable;
 use mysql::{OptsBuilder, Pool, PooledConn};
 use once_cell::sync::Lazy;
 use std::env;
@@ -65,4 +66,18 @@ pub(super) fn obter_conexao() -> Result<PooledConn, ErroAplicacao> {
         .unwrap()
         .get_conn()
         .map_err(|_| ErroAplicacao::BancoDeDadosConexao)
+}
+
+/// Verifica se o banco está respondendo. Usado pelo /readyz.
+/// Faz um `SELECT 1` simples para confirmar a conexão de fato funciona.
+pub fn ping_banco() -> Result<(), ErroAplicacao> {
+    let mut conn = obter_conexao()?;
+    let one: Option<i32> = conn
+        .query_first("SELECT 1")
+        .map_err(ErroAplicacao::from)?;
+    if one == Some(1) {
+        Ok(())
+    } else {
+        Err(ErroAplicacao::BancoDeDadosConexao)
+    }
 }
