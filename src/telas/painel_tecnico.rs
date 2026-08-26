@@ -1,13 +1,14 @@
 // src/telas/painel_tecnico.rs
 
 use crate::aplicacao::AppEvent;
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use crate::servicos::OrdemServico;
 use eframe::egui;
 use std::sync::{Arc, Mutex};
 
-// O enum `AcaoTecnico` foi removido.
-
 pub struct TelaTecnico {
+    base: BaseHandle,
+    token: TokenArc,
     ordens: Arc<Mutex<Vec<OrdemServico>>>,
     ordem_selecionada: Option<u32>,
     filtro_busca: String,
@@ -15,8 +16,10 @@ pub struct TelaTecnico {
 }
 
 impl TelaTecnico {
-    pub fn new(_endereco_servidor: Arc<Mutex<String>>) -> Self {
+    pub fn new(base: BaseHandle, token: TokenArc) -> Self {
         Self {
+            base,
+            token,
             ordens: Arc::new(Mutex::new(Vec::new())),
             ordem_selecionada: None,
             filtro_busca: String::new(),
@@ -24,31 +27,27 @@ impl TelaTecnico {
         }
     }
 
-    // [CORREÇÃO] A função `update` agora retorna `Option<AppEvent>`.
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         let mut evento_emitido = None;
 
-        // Se ainda não carregamos as ordens, disparamos o carregamento em background.
         let precisa_carregar = {
             let ord_guard = self.ordens.lock().unwrap();
             let carreg = *self.carregando.lock().unwrap();
             ord_guard.is_empty() && !carreg
         };
         if precisa_carregar {
-            // marca que estamos carregando
             *self.carregando.lock().unwrap() = true;
             let ord_clone = Arc::clone(&self.ordens);
             let carreg_clone = Arc::clone(&self.carregando);
             let ctx_clone = ctx.clone();
+            let base = self.base.clone();
+            let token = self.token.clone();
             crate::executor::spawn(move || {
-                match crate::servicos::listar_ordens_servico() {
-                    Ok(res) => {
-                        let mut guard = ord_clone.lock().unwrap();
-                        *guard = res;
-                    }
-                    Err(e) => {
-                        eprintln!("Erro ao carregar ordens de serviço: {}", e);
-                    }
+                let res: Result<Vec<OrdemServico>, ErroServico> =
+                    gui_services::listar_ordens(&base, &token);
+                match res {
+                    Ok(lista) => *ord_clone.lock().unwrap() = lista,
+                    Err(e) => tracing::error!("❌ listar_ordens: {}", e),
                 }
                 *carreg_clone.lock().unwrap() = false;
                 ctx_clone.request_repaint();

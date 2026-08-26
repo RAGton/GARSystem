@@ -1,6 +1,7 @@
 // src/telas/painel_ordens.rs
 
 use crate::aplicacao::AppEvent;
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use crate::servicos::{OrdemServico, PapelUsuario};
 use eframe::egui;
 use genpdf::{elements, Document};
@@ -37,17 +38,18 @@ fn gerar_texto_os(os: &crate::servicos::OrdemServico) -> String {
 }
 
 pub struct TelaOrdens {
+    base: BaseHandle,
+    token: TokenArc,
     ordens: Arc<Mutex<Vec<OrdemServico>>>,
     filtro_busca: String,
     carregando: Arc<Mutex<bool>>,
     papel: PapelUsuario,
-    // Estado para modal de visualização/impressão
     modal_visualizar_aberto: bool,
     os_atual: Option<OrdemServico>,
+    mensagem: Option<(String, bool)>,
 }
 
 fn exportar_pdf_os(os: &crate::servicos::OrdemServico, caminho: &str) -> Result<(), String> {
-    // Monta um documento PDF simples usando genpdf
     let font_family = genpdf::fonts::from_files("./assets/fonts", "JetBrainsMono-Regular", None)
         .map_err(|e| e.to_string())?;
     let mut doc = Document::new(font_family);
@@ -63,21 +65,23 @@ fn exportar_pdf_os(os: &crate::servicos::OrdemServico, caminho: &str) -> Result<
 }
 
 impl TelaOrdens {
-    pub fn new(papel: PapelUsuario, _endereco_servidor: Arc<Mutex<String>>) -> Self {
+    pub fn new(papel: PapelUsuario, base: BaseHandle, token: TokenArc) -> Self {
         Self {
+            base,
+            token,
             ordens: Arc::new(Mutex::new(Vec::new())),
             filtro_busca: String::new(),
             carregando: Arc::new(Mutex::new(false)),
             papel,
             modal_visualizar_aberto: false,
             os_atual: None,
+            mensagem: None,
         }
     }
 
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         let mut evento_emitido = None;
 
-        // Carrega ordens em background se necessário
         let precisa_carregar = {
             let ord_guard = self.ordens.lock().unwrap();
             let carreg = *self.carregando.lock().unwrap();
@@ -88,15 +92,26 @@ impl TelaOrdens {
             let ord_clone = Arc::clone(&self.ordens);
             let carreg_clone = Arc::clone(&self.carregando);
             let ctx_clone = ctx.clone();
+            let base = self.base.clone();
+            let token = self.token.clone();
             crate::executor::spawn(move || {
-                match crate::servicos::listar_ordens_servico() {
-                    Ok(res) => {
-                        let mut guard = ord_clone.lock().unwrap();
-                        *guard = res;
+                // Versão paginada: limita a 50 ordens (primeira página).
+                // Telas que precisarem de mais podem iterar page=2,3,...
+                let res = gui_services::listar_ordens_paginado(&base, &token, 1, 50);
+                match res {
+                    Ok(pagina) => {
+                        let lista: Vec<OrdemServico> =
+                            serde_json::from_value(serde_json::Value::Array(pagina.items))
+                                .unwrap_or_default();
+                        tracing::info!(
+                            "✅ listar_ordens_paginado: página {}/{}, {} total",
+                            pagina.page,
+                            pagina.total_paginas,
+                            pagina.total
+                        );
+                        *ord_clone.lock().unwrap() = lista;
                     }
-                    Err(e) => {
-                        eprintln!("Erro ao carregar ordens de serviço: {}", e);
-                    }
+                    Err(e) => tracing::error!("❌ listar_ordens_paginado: {}", e),
                 }
                 *carreg_clone.lock().unwrap() = false;
                 ctx_clone.request_repaint();
@@ -186,7 +201,8 @@ impl TelaOrdens {
                                             }
                                             if ui.button("📄 Ver/Imprimir").clicked() {
                                                 // busca a OS por id e abre modal
-                                                match crate::servicos::buscar_os_por_id(os.id) {
+                                                let t = crate::servicos::tenant_padrao();
+                                                match crate::servicos::buscar_os_por_id(t, os.id) {
                                                     Ok(os_full) => {
                                                         self.os_atual = Some(os_full);
                                                         self.modal_visualizar_aberto = true;

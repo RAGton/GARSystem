@@ -1,10 +1,8 @@
 // src/telas/painel_orcamentos.rs
 use crate::aplicacao::AppEvent;
-use crate::http_client::get_client;
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use eframe::egui;
 use serde::Serialize;
-use std::sync::{Arc, Mutex};
-use std::thread;
 
 #[derive(Clone, Debug)]
 pub struct ItemOrcamento {
@@ -35,73 +33,61 @@ pub struct TelaOrcamentos {
     novo_item_descricao: String,
     novo_item_qtd: u32,
     novo_item_preco: f64,
-    endereco_servidor: Arc<Mutex<String>>,
+    base: BaseHandle,
+    token: TokenArc,
+    mensagem: Option<(String, bool)>, // (mensagem, é_erro)
 }
 
 impl TelaOrcamentos {
-    pub fn new(endereco_servidor: Arc<Mutex<String>>) -> Self {
+    pub fn new(base: BaseHandle, token: TokenArc) -> Self {
         Self {
             cliente: String::new(),
             itens: Vec::new(),
             novo_item_descricao: String::new(),
             novo_item_qtd: 1,
             novo_item_preco: 0.0,
-            endereco_servidor,
+            base,
+            token,
+            mensagem: None,
         }
     }
 
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         let mut evento = None;
-        // Toolbar + responsive two-column layout
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Top toolbar
             ui.horizontal(|ui| {
                 ui.add_enabled_ui(true, |ui| {
                     if ui
                         .add_sized([130.0, 30.0], egui::Button::new("💾 Salvar Orçamento"))
                         .clicked()
                     {
-                        // salvar sem travar UI -> enviar POST /orcamentos
-                        let _cliente = self.cliente.clone();
                         let itens = self.itens.clone();
-                        let endereco = Arc::clone(&self.endereco_servidor);
-                        thread::spawn(move || {
-                            let endereco_str = endereco.lock().unwrap().clone();
-                            let url = format!("{}/orcamentos", endereco_str);
-                            let total: f64 = itens
-                                .iter()
-                                .map(|it| it.preco_unitario * it.quantidade as f64)
-                                .sum();
-                            let payload = OrcamentoPayload {
-                                id: 0,
-                                cliente_id: 0, // por enquanto nome do cliente livre; integração futura por id
-                                items: itens
-                                    .into_iter()
-                                    .map(|it| OrcamentoPayloadItem {
-                                        descricao: it.descricao,
-                                        quantidade: it.quantidade,
-                                        preco_unitario: it.preco_unitario,
-                                        preco_total: it.preco_unitario * it.quantidade as f64,
-                                    })
-                                    .collect(),
-                                total,
-                            };
-
-                            let client = get_client();
-                            match client.post(&url).json(&payload).send() {
-                                Ok(resp) => {
-                                    if resp.status().is_success() {
-                                        println!("Orçamento salvo com sucesso (HTTP).");
-                                    } else {
-                                        eprintln!(
-                                            "Falha ao salvar orcamento: status {}",
-                                            resp.status()
-                                        );
-                                    }
-                                }
-                                Err(e) => {
-                                    eprintln!("Erro HTTP ao salvar orcamento: {:?}", e);
-                                }
+                        let total: f64 = itens
+                            .iter()
+                            .map(|it| it.preco_unitario * it.quantidade as f64)
+                            .sum();
+                        let payload = OrcamentoPayload {
+                            id: 0,
+                            cliente_id: 0,
+                            items: itens
+                                .into_iter()
+                                .map(|it| OrcamentoPayloadItem {
+                                    descricao: it.descricao,
+                                    quantidade: it.quantidade,
+                                    preco_unitario: it.preco_unitario,
+                                    preco_total: it.preco_unitario * it.quantidade as f64,
+                                })
+                                .collect(),
+                            total,
+                        };
+                        let base = self.base.clone();
+                        let token = self.token.clone();
+                        crate::executor::spawn(move || {
+                            let res: Result<serde_json::Value, ErroServico> =
+                                gui_services::criar_orcamento(&base, &token, &payload);
+                            match res {
+                                Ok(_) => tracing::info!("✅ Orçamento salvo"),
+                                Err(e) => tracing::error!("❌ Falha ao salvar orçamento: {}", e),
                             }
                         });
                     }

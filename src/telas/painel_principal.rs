@@ -1,6 +1,7 @@
 // src/telas/painel_principal.rs
 
 use crate::aplicacao::AppEvent;
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use crate::servicos::{OrdemServico, PapelUsuario, StatusOS};
 use eframe::egui;
 use egui_extras::{Column, TableBuilder};
@@ -15,43 +16,34 @@ enum EstadoCarregamento {
     Erro(String),
 }
 
-/// Tela principal (Dashboard) com gráficos e KPIs buscando dados reais do banco.
+/// Tela principal (Dashboard) com gráficos e KPIs buscando dados reais do servidor.
 pub struct TelaDashboard {
     papel_usuario: PapelUsuario,
-    endereco_servidor: Arc<Mutex<String>>,
-
-    // Estado de carregamento
+    base: BaseHandle,
+    token: TokenArc,
     estado_carregamento: Arc<Mutex<EstadoCarregamento>>,
-
-    // Dados reais do banco
     ordens_servico: Arc<Mutex<Vec<OrdemServico>>>,
-
-    // Dados processados para exibição
     vendas_por_dia: Vec<[f64; 2]>,
     os_por_dia: Vec<[f64; 2]>,
     status_os: Vec<(String, u32)>,
-
-    // Flag para carregar apenas uma vez
     dados_carregados: bool,
 }
 
 impl TelaDashboard {
-    pub fn new(papel_usuario: PapelUsuario, endereco_servidor: Arc<Mutex<String>>) -> Self {
-        let dashboard = Self {
+    pub fn new(papel_usuario: PapelUsuario, base: BaseHandle, token: TokenArc) -> Self {
+        Self {
             papel_usuario,
-            endereco_servidor,
+            base,
+            token,
             estado_carregamento: Arc::new(Mutex::new(EstadoCarregamento::Inicial)),
             ordens_servico: Arc::new(Mutex::new(Vec::new())),
             vendas_por_dia: Vec::new(),
             os_por_dia: Vec::new(),
             status_os: Vec::new(),
             dados_carregados: false,
-        };
-
-        dashboard
+        }
     }
 
-    /// Carrega dados do servidor de forma assíncrona
     fn carregar_dados_servidor(&mut self, ctx: &egui::Context) {
         if self.dados_carregados {
             return;
@@ -60,41 +52,24 @@ impl TelaDashboard {
         self.dados_carregados = true;
         *self.estado_carregamento.lock().unwrap() = EstadoCarregamento::Carregando;
 
-        let servidor = self.endereco_servidor.lock().unwrap().clone();
         let estado_clone = self.estado_carregamento.clone();
         let ordens_clone = self.ordens_servico.clone();
         let ctx_clone = ctx.clone();
+        let base = self.base.clone();
+        let token = self.token.clone();
 
-        // Spawn thread para buscar dados
         crate::executor::spawn(move || {
-            let client = crate::http_client::get_client();
-
-            // Buscar ordens de serviço
-            let ordens_result = client.get(format!("{}/ordens", servidor)).send();
-
-            match ordens_result {
-                Ok(response) if response.status().is_success() => {
-                    match response.json::<Vec<OrdemServico>>() {
-                        Ok(ordens) => {
-                            *ordens_clone.lock().unwrap() = ordens;
-                            *estado_clone.lock().unwrap() = EstadoCarregamento::Sucesso;
-                        }
-                        Err(e) => {
-                            *estado_clone.lock().unwrap() =
-                                EstadoCarregamento::Erro(format!("Erro ao parsear dados: {}", e));
-                        }
-                    }
-                }
-                Ok(response) => {
-                    *estado_clone.lock().unwrap() =
-                        EstadoCarregamento::Erro(format!("Erro HTTP: {}", response.status()));
+            let res: Result<Vec<OrdemServico>, ErroServico> =
+                gui_services::listar_ordens(&base, &token);
+            match res {
+                Ok(ordens) => {
+                    *ordens_clone.lock().unwrap() = ordens;
+                    *estado_clone.lock().unwrap() = EstadoCarregamento::Sucesso;
                 }
                 Err(e) => {
-                    *estado_clone.lock().unwrap() =
-                        EstadoCarregamento::Erro(format!("Erro de conexão: {}", e));
+                    *estado_clone.lock().unwrap() = EstadoCarregamento::Erro(e.mensagem);
                 }
             }
-
             ctx_clone.request_repaint();
         });
     }

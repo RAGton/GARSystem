@@ -1,6 +1,7 @@
 // src/telas/painel_adm.rs
 
 use crate::aplicacao::AppEvent;
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use crate::servicos::{InfoUsuario, PapelUsuario};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
@@ -37,16 +38,14 @@ impl Default for FormularioNovoUsuario {
 }
 
 pub struct TelaAdmin {
-    // `Arc<Mutex<...>>` é a forma canónica em Rust para partilhar dados de forma segura
-    // entre a thread principal (da UI) e as threads de trabalho (que fazem os pedidos HTTP).
     estado_carregamento: Arc<Mutex<EstadoCarregamento>>,
-    endereco_servidor: Arc<Mutex<String>>,
+    base: BaseHandle,
+    token: TokenArc,
 
     formulario: FormularioNovoUsuario,
     mostrar_janela_confirmacao: bool,
     usuario_para_remover: Option<String>,
 
-    // Campos para a funcionalidade de alterar senha
     mostrar_janela_alterar_senha: bool,
     usuario_para_alterar_senha: Option<InfoUsuario>,
     nova_senha: String,
@@ -55,10 +54,11 @@ pub struct TelaAdmin {
 }
 
 impl TelaAdmin {
-    pub fn new(endereco_servidor: Arc<Mutex<String>>) -> Self {
+    pub fn new(base: BaseHandle, token: TokenArc) -> Self {
         let mut nova_tela = Self {
             estado_carregamento: Arc::new(Mutex::new(EstadoCarregamento::Carregando)),
-            endereco_servidor,
+            base,
+            token,
             formulario: FormularioNovoUsuario::default(),
             mostrar_janela_confirmacao: false,
             usuario_para_remover: None,
@@ -79,15 +79,15 @@ impl TelaAdmin {
     fn recarregar_usuarios(&mut self, ctx: Option<egui::Context>) {
         // Clonamos os `Arc` para que possam ser movidos para a nova thread.
         let estado_clone = self.estado_carregamento.clone();
-        let endereco_clone = self.endereco_servidor.clone();
+        let base_clone = self.base.clone();
+        let token_clone = self.token.clone();
 
         // `thread::spawn` é como fazer um `fork()` em sistemas Linux, criando um
         // novo processo de execução que não bloqueia a interface gráfica.
         // Use o executor compartilhado e o client singleton para melhor performance.
         crate::executor::spawn(move || {
-            let endereco = endereco_clone.lock().unwrap();
-            let url = format!("{}/usuarios", *endereco);
-            let client = crate::http_client::get_client();
+            let url = base_clone.url("/usuarios");
+            let token = token_clone.lock().ok().and_then(|g| g.clone());
 
             // Atualiza o estado para "Carregando" antes de fazer o pedido.
             *estado_clone.lock().unwrap() = EstadoCarregamento::Carregando;
@@ -97,20 +97,16 @@ impl TelaAdmin {
                 ctx.request_repaint();
             }
 
-            let response = client.get(&url).send();
+            let response = match crate::http_client::get_autenticado::<Vec<InfoUsuario>>(
+                &url,
+                token.as_deref(),
+            ) {
+                Ok(usuarios) => EstadoCarregamento::Sucesso(usuarios),
+                Err(e) => EstadoCarregamento::Falha(format!("Erro: {}", e)),
+            };
 
             let mut estado_guard = estado_clone.lock().unwrap();
-            *estado_guard = match response {
-                Ok(res) => match res.json::<Vec<InfoUsuario>>() {
-                    Ok(utilizadores) => EstadoCarregamento::Sucesso(utilizadores),
-                    Err(e) => {
-                        EstadoCarregamento::Falha(format!("Erro ao processar resposta: {}", e))
-                    }
-                },
-                Err(e) => {
-                    EstadoCarregamento::Falha(format!("Erro de conexão com '{}': {}", url, e))
-                }
-            };
+            *estado_guard = response;
 
             // Pede para a UI se redesenhar novamente para mostrar os resultados (ou o erro).
             if let Some(ctx) = ctx {
@@ -259,45 +255,42 @@ impl TelaAdmin {
         // Sim, isto parece estranho, mas estamos a clonar `self` para dentro da thread.
         // Uma abordagem mais avançada usaria canais (mpsc) para comunicar de volta,
         // mas para manter a simplicidade, clonar `Arc`s é a forma mais direta.
-        let endereco_clone = self.endereco_servidor.clone();
+        let base_clone = self.base.clone();
         let estado_carregamento_clone = self.estado_carregamento.clone();
+        let token_clone = self.token.clone();
 
         let form_clone = Arc::new(Mutex::new(std::mem::take(&mut self.formulario)));
 
         crate::executor::spawn(move || {
-            let endereco = endereco_clone.lock().unwrap();
-            let url = format!("{}/usuarios", *endereco);
-            let client = crate::http_client::get_client();
-
+            let url = base_clone.url("/usuarios");
+            let token = token_clone.lock().ok().and_then(|g| g.clone());
             let mut form_guard = form_clone.lock().unwrap();
 
-            let res = client
-                .post(&url)
-                .json(&serde_json::json!({
-                    "nome_usuario": nome_utilizador,
-                    "senha": senha,
-                    "papel": papel
-                }))
-                .send();
+            // CORREÇÃO MASS-ASSIGNMENT: o backend novo ignora o `papel` enviado
+            // pelo cliente; novos usuários sempre nascem com `Comercial`.
+            // Para promover, é preciso um endpoint separado.
+            let body = serde_json::json!({
+                "nome_usuario": nome_utilizador,
+                "senha": senha,
+            });
+            let res = crate::http_client::post_autenticado::<serde_json::Value, _>(
+                &url,
+                &body,
+                token.as_deref(),
+            );
 
             match res {
-                Ok(response) => {
-                    if response.status().is_success() {
-                        form_guard.mensagem =
-                            format!("Utilizador '{}' criado com sucesso!", nome_utilizador);
-                        form_guard.e_erro = false;
+                Ok(_) => {
+                    form_guard.mensagem =
+                        format!("Utilizador '{}' criado com sucesso!", nome_utilizador);
+                    form_guard.e_erro = false;
 
-                        // Dispara o recarregamento da lista de utilizadores.
-                        // Esta é a forma de comunicar de volta: mudar o estado e pedir um redraw.
-                        let mut estado_guard = estado_carregamento_clone.lock().unwrap();
-                        *estado_guard = EstadoCarregamento::Carregando; // Isto irá acionar o recarregamento na próxima frame
-                    } else {
-                        form_guard.mensagem = format!("Erro do servidor: {}", response.status());
-                        form_guard.e_erro = true;
-                    }
+                    // Dispara o recarregamento da lista de utilizadores.
+                    let mut estado_guard = estado_carregamento_clone.lock().unwrap();
+                    *estado_guard = EstadoCarregamento::Carregando;
                 }
                 Err(e) => {
-                    form_guard.mensagem = format!("Erro de conexão: {}", e);
+                    form_guard.mensagem = format!("Erro: {}", e);
                     form_guard.e_erro = true;
                 }
             }

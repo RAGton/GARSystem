@@ -1,6 +1,7 @@
 // src/telas/painel_os_edicao.rs
 
 use crate::aplicacao::{AppEvent, TelaAtiva};
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use crate::servicos::{
     InfoUsuario, OrdemServico, Peca, PecaOS, Servico, ServicoOS, SituacaoOS, StatusOS,
 };
@@ -26,6 +27,7 @@ enum EstadoCarregamento<T> {
     Erro(String),
 }
 
+#[allow(clippy::derivable_impls)]
 impl<T> Default for EstadoCarregamento<T> {
     fn default() -> Self {
         Self::Ocioso
@@ -40,26 +42,23 @@ struct AtualizarOrdemPayload {
 }
 
 pub struct TelaOsEdicao {
-    // --- Dependências e Estado Geral ---
     os_id: u32,
     usuario_logado: String,
-    endereco_servidor: Arc<Mutex<String>>,
+    base: BaseHandle,
+    token: TokenArc,
     tx_evento: std::sync::mpsc::Sender<AppEvent>,
 
-    // --- Estado da OS e Salvar ---
     estado_os: Arc<Mutex<Option<Result<OrdemServico, String>>>>,
-    os_editada: OrdemServico, // Cópia local para edição
+    os_editada: OrdemServico,
     salvando: bool,
     resultado_salvar: Arc<Mutex<Option<Result<(), String>>>>,
-    notificacao: Option<(String, egui::Color32)>, // (mensagem, cor)
+    notificacao: Option<(String, egui::Color32)>,
 
-    // --- Estado das Abas e Listas ---
     aba_ativa: AbaDetalhesOS,
     lista_pecas_estoque: Arc<Mutex<EstadoCarregamento<Peca>>>,
     lista_servicos_catalogo: Arc<Mutex<EstadoCarregamento<Servico>>>,
     lista_tecnicos: Arc<Mutex<EstadoCarregamento<InfoUsuario>>>,
 
-    // --- Campos de Busca e Interação ---
     filtro_peca: String,
     filtro_servico: String,
     filtro_tecnico: String,
@@ -69,14 +68,16 @@ pub struct TelaOsEdicao {
 impl TelaOsEdicao {
     pub fn new(
         os_id: u32,
-        endereco_servidor: Arc<Mutex<String>>,
+        base: BaseHandle,
+        token: TokenArc,
         usuario_logado: String,
         tx_evento: std::sync::mpsc::Sender<AppEvent>,
     ) -> Self {
         let mut tela = Self {
             os_id,
             usuario_logado,
-            endereco_servidor,
+            base,
+            token,
             tx_evento,
             estado_os: Arc::new(Mutex::new(None)),
             os_editada: OrdemServico::placeholder(os_id),
@@ -678,85 +679,73 @@ impl TelaOsEdicao {
     // --- Funções de Comunicação com o Servidor ---
 
     fn get_server_address(&self) -> String {
-        self.endereco_servidor.lock().unwrap().clone()
+        // Mantido por compat — preferir self.base.url() nos novos códigos.
+        self.base.url("")
     }
 
     fn disparar_carregamento_os(&self) {
         let os_id = self.os_id;
-        let server_addr = self.get_server_address();
+        let base = self.base.clone();
+        let token = self.token.clone();
         let tx = self.tx_evento.clone();
         let estado_os = self.estado_os.clone();
 
         crate::executor::spawn(move || {
-            let client = crate::http_client::get_client();
-            let url = format!("{}/ordens/{}", server_addr, os_id);
-            let resultado = match client.get(&url).send() {
-                Ok(resp) => resp.json::<OrdemServico>().map_err(|e| e.to_string()),
-                Err(e) => Err(e.to_string()),
-            };
-            *estado_os.lock().unwrap() = Some(resultado);
+            let res: Result<OrdemServico, ErroServico> =
+                gui_services::obter_ordem(&base, &token, os_id);
+            *estado_os.lock().unwrap() = Some(res.map_err(|e| e.mensagem));
             let _ = tx.send(AppEvent::Repaint);
         });
     }
 
     fn disparar_carregamento_pecas(&self) {
-        let server_addr = self.get_server_address();
+        let base = self.base.clone();
+        let token = self.token.clone();
         let tx = self.tx_evento.clone();
         let estado_pecas = self.lista_pecas_estoque.clone();
         *estado_pecas.lock().unwrap() = EstadoCarregamento::Carregando;
 
         crate::executor::spawn(move || {
-            let client = crate::http_client::get_client();
-            let url = format!("{}/estoque/pecas", server_addr);
-            let resultado = match client.get(&url).send() {
-                Ok(resp) => resp.json::<Vec<Peca>>().map_err(|e| e.to_string()),
-                Err(e) => Err(e.to_string()),
-            };
-            *estado_pecas.lock().unwrap() = match resultado {
+            let res: Result<Vec<Peca>, ErroServico> = gui_services::listar_pecas(&base, &token);
+            *estado_pecas.lock().unwrap() = match res {
                 Ok(pecas) => EstadoCarregamento::Pronto(pecas),
-                Err(e) => EstadoCarregamento::Erro(e),
+                Err(e) => EstadoCarregamento::Erro(e.mensagem),
             };
             let _ = tx.send(AppEvent::Repaint);
         });
     }
 
     fn disparar_carregamento_servicos(&self) {
-        let server_addr = self.get_server_address();
+        let base = self.base.clone();
+        let token = self.token.clone();
         let tx = self.tx_evento.clone();
         let estado_servicos = self.lista_servicos_catalogo.clone();
         *estado_servicos.lock().unwrap() = EstadoCarregamento::Carregando;
 
         crate::executor::spawn(move || {
-            let client = crate::http_client::get_client();
-            let url = format!("{}/servicos", server_addr);
-            let resultado = match client.get(&url).send() {
-                Ok(resp) => resp.json::<Vec<Servico>>().map_err(|e| e.to_string()),
-                Err(e) => Err(e.to_string()),
-            };
-            *estado_servicos.lock().unwrap() = match resultado {
+            let res: Result<Vec<Servico>, ErroServico> =
+                gui_services::listar_servicos(&base, &token);
+            *estado_servicos.lock().unwrap() = match res {
                 Ok(servicos) => EstadoCarregamento::Pronto(servicos),
-                Err(e) => EstadoCarregamento::Erro(e),
+                Err(e) => EstadoCarregamento::Erro(e.mensagem),
             };
             let _ = tx.send(AppEvent::Repaint);
         });
     }
 
     fn disparar_carregamento_tecnicos(&self) {
-        let server_addr = self.get_server_address();
+        let base = self.base.clone();
+        let token = self.token.clone();
         let tx = self.tx_evento.clone();
         let estado_tecnicos = self.lista_tecnicos.clone();
         *estado_tecnicos.lock().unwrap() = EstadoCarregamento::Carregando;
 
         crate::executor::spawn(move || {
-            let client = crate::http_client::get_client();
-            let url = format!("{}/usuarios", server_addr);
-            let resultado = match client.get(&url).send() {
-                Ok(resp) => resp.json::<Vec<InfoUsuario>>().map_err(|e| e.to_string()),
-                Err(e) => Err(e.to_string()),
-            };
-            *estado_tecnicos.lock().unwrap() = match resultado {
+            let res: Result<Vec<InfoUsuario>, ErroServico> =
+                gui_services::listar_usuarios(&base, &token);
+            *estado_tecnicos.lock().unwrap() = match res {
                 Ok(tecnicos) => EstadoCarregamento::Pronto(tecnicos),
-                Err(e) => EstadoCarregamento::Erro(e),
+                Err(e) => EstadoCarregamento::Erro(e.mensagem),
             };
             let _ = tx.send(AppEvent::Repaint);
         });
@@ -770,25 +759,16 @@ impl TelaOsEdicao {
             os: self.os_editada.clone(),
             usuario: self.usuario_logado.clone(),
         };
-        let server_addr = self.get_server_address();
+        let base = self.base.clone();
+        let token = self.token.clone();
         let os_id = self.os_id;
         let tx = self.tx_evento.clone();
         let resultado_salvar = self.resultado_salvar.clone();
 
         crate::executor::spawn(move || {
-            let client = crate::http_client::get_client();
-            let url = format!("{}/ordens/{}", server_addr, os_id);
-            let resultado = match client.put(&url).json(&payload).send() {
-                Ok(resp) => {
-                    if resp.status().is_success() {
-                        Ok(())
-                    } else {
-                        Err(format!("Erro do servidor: {}", resp.status()))
-                    }
-                }
-                Err(e) => Err(e.to_string()),
-            };
-            *resultado_salvar.lock().unwrap() = Some(resultado);
+            let res: Result<(), ErroServico> =
+                gui_services::atualizar_ordem(&base, &token, os_id, &payload);
+            *resultado_salvar.lock().unwrap() = Some(res.map_err(|e| e.mensagem));
             let _ = tx.send(AppEvent::Repaint);
         });
     }

@@ -974,6 +974,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link 0.2.1",
 ]
@@ -5101,6 +5102,7 @@ name = "senior_system"
 version = "1.8.0"
 dependencies = [
  "axum",
+ "base64",
  "bcrypt",
  "chrono",
  "dotenvy",
@@ -5108,6 +5110,7 @@ dependencies = [
  "egui_extras",
  "egui_plot",
  "genpdf",
+ "hex",
  "image",
  "jsonwebtoken",
  "mysql",
@@ -5115,15 +5118,18 @@ dependencies = [
  "once_cell",
  "open",
  "printpdf 0.8.2",
+ "rand 0.8.5",
  "reqwest",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 2.0.17",
  "threadpool",
  "tokio",
  "tower-http 0.5.2",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -6377,6 +6383,7 @@ version = "1.18.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2f87b8aa10b915a06587d0dec516c282ff295b475d94abf425d62b57710070a2"
 dependencies = [
+ "getrandom 0.3.3",
  "js-sys",
  "wasm-bindgen",
 ]

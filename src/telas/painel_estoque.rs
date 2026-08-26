@@ -1,6 +1,7 @@
 // src/telas/painel_estoque.rs
 
 use crate::aplicacao::AppEvent;
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use crate::servicos::{Fornecedor, Peca};
 use eframe::egui;
 
@@ -13,21 +14,23 @@ enum AbaEstoque {
 }
 
 pub struct TelaEstoque {
+    base: BaseHandle,
+    token: TokenArc,
     aba_ativa: AbaEstoque,
     lista_pecas: std::sync::Arc<std::sync::Mutex<Vec<Peca>>>,
     lista_fornecedores: std::sync::Arc<std::sync::Mutex<Vec<Fornecedor>>>,
-    // Formulários
     form_peca: Peca,
     form_fornecedor: Fornecedor,
-    // Filtros
     filtro_peca: String,
-    // Estado da UI
     peca_selecionada_edicao: Option<Peca>,
+    mensagem: Option<(String, bool)>,
 }
 
 impl TelaEstoque {
-    pub fn new() -> Self {
+    pub fn new(base: BaseHandle, token: TokenArc) -> Self {
         let tela = Self {
+            base,
+            token,
             aba_ativa: AbaEstoque::Pecas,
             lista_pecas: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
             lista_fornecedores: std::sync::Arc::new(std::sync::Mutex::new(Vec::new())),
@@ -35,16 +38,32 @@ impl TelaEstoque {
             form_fornecedor: Fornecedor::default(),
             filtro_peca: String::new(),
             peca_selecionada_edicao: None,
+            mensagem: None,
         };
 
-        // Carrega as listas em background
+        // Carrega a lista de peças via API autenticada (PAGINADA).
+        // Limita a primeira página com 50 itens para não carregar 10k+ registros.
         let pecas_clone = tela.lista_pecas.clone();
-        let fornec_clone = tela.lista_fornecedores.clone();
+        let base = tela.base.clone();
+        let token = tela.token.clone();
         crate::executor::spawn(move || {
-            let p = crate::banco_de_dados::estoque::listar_pecas().unwrap_or_default();
-            let f = crate::banco_de_dados::estoque::listar_fornecedores().unwrap_or_default();
-            *pecas_clone.lock().unwrap() = p;
-            *fornec_clone.lock().unwrap() = f;
+            let res = gui_services::listar_pecas_paginado(&base, &token, 1, 50);
+            match res {
+                Ok(pagina) => {
+                    // Decodifica items como Vec<Peca>
+                    let lista: Vec<Peca> =
+                        serde_json::from_value(serde_json::Value::Array(pagina.items))
+                            .unwrap_or_default();
+                    tracing::info!(
+                        "✅ listar_pecas_paginado: página {}/{}, {} total",
+                        pagina.page,
+                        pagina.total_paginas,
+                        pagina.total
+                    );
+                    *pecas_clone.lock().unwrap() = lista;
+                }
+                Err(e) => tracing::error!("❌ listar_pecas_paginado: {}", e),
+            }
         });
 
         tela
@@ -110,7 +129,9 @@ impl TelaEstoque {
                 .show(ui.ctx(), |ui| {
                     self.form_edicao_peca(ui, &mut peca_edicao);
                     if ui.button("Salvar Alterações").clicked() {
-                        if let Err(e) = crate::banco_de_dados::estoque::atualizar_peca(&peca_edicao)
+                        let t = crate::servicos::tenant_padrao();
+                        if let Err(e) =
+                            crate::banco_de_dados::estoque::atualizar_peca(t, &peca_edicao)
                         {
                             eprintln!("Erro ao atualizar peça: {}", e);
                         } else {
@@ -186,7 +207,8 @@ impl TelaEstoque {
         });
 
         if ui.button("Salvar Nova Peça").clicked() {
-            if let Err(e) = crate::banco_de_dados::estoque::criar_peca(&self.form_peca) {
+            let t = crate::servicos::tenant_padrao();
+            if let Err(e) = crate::banco_de_dados::estoque::criar_peca(t, &self.form_peca) {
                 eprintln!("Erro ao criar peça: {}", e);
             } else {
                 self.form_peca = Peca::default();
@@ -230,8 +252,9 @@ impl TelaEstoque {
                     ui.end_row();
                 });
             if ui.button("Salvar Fornecedor").clicked() {
+                let t = crate::servicos::tenant_padrao();
                 if let Err(e) =
-                    crate::banco_de_dados::estoque::criar_fornecedor(&self.form_fornecedor)
+                    crate::banco_de_dados::estoque::criar_fornecedor(t, &self.form_fornecedor)
                 {
                     eprintln!("Erro ao criar fornecedor: {}", e);
                 } else {
@@ -260,12 +283,11 @@ impl TelaEstoque {
 
     fn recarregar_listas(&mut self) {
         let pecas = self.lista_pecas.clone();
-        let fornec = self.lista_fornecedores.clone();
+        let base = self.base.clone();
+        let token = self.token.clone();
         crate::executor::spawn(move || {
-            let p = crate::banco_de_dados::estoque::listar_pecas().unwrap_or_default();
-            let f = crate::banco_de_dados::estoque::listar_fornecedores().unwrap_or_default();
-            *pecas.lock().unwrap() = p;
-            *fornec.lock().unwrap() = f;
+            let res: Result<Vec<Peca>, ErroServico> = gui_services::listar_pecas(&base, &token);
+            *pecas.lock().unwrap() = res.unwrap_or_default();
         });
     }
 }

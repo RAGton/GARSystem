@@ -14,6 +14,14 @@ path = "src/main.rs"
 name = "senior-system-server"
 path = "src/server.rs"
 
+[[bin]]
+name = "senior-system-admin"
+path = "src/bin/admin_cli.rs"
+
+[[bin]]
+name = "audit-rbac-achado1"
+path = "src/bin/audit_rbac_achado1.rs"
+
 # ==========================================================
 # Dependências
 # ==========================================================
@@ -28,7 +36,7 @@ egui_plot = "0.34.0"
 egui_extras = { version = "0.33.0", features = ["chrono"] }
 threadpool = "1.8"
 num_cpus = "1.17"
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
 
 # --- Dependências para o Servidor (Backend) ---
 # Usamos Axum, o framework web moderno que integra com Tokio
@@ -45,6 +53,8 @@ dotenvy = "0.15"
 jsonwebtoken = "9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+uuid = { version = "1.10", features = ["v4"] }
+rand = "0.8"
 
 # --- Dependências de Banco de Dados e Criptografia ---
 # Versão fixada para estabilidade
@@ -53,3 +63,17 @@ bcrypt = "0.17.1"
 genpdf = "0.2"
 open = "5.3.2"
 printpdf = "0.8.2"
+sha2 = "0.10"
+hex = "0.4"
+base64 = "0.22"
+
+[dev-dependencies]
+reqwest = { version = "0.12", features = ["blocking", "json"] }
+tokio = { version = "1", features = ["full"] }
+
+# --- Features ---
+# `integration-tests` habilita os testes marcados com #[ignore] que
+# requerem MySQL real. Por padrão estão desabilitados.
+[features]
+default = []
+integration-tests = []
