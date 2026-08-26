@@ -2,6 +2,10 @@
 //
 // Testes da lógica de diff de estoque.
 //
+// Justificativa P2.6.2c: testes de integração com allow para lint.
+#![allow(unused_imports, unused_mut, dead_code)]
+//
+//
 // Como o DB real precisa de MySQL rodando, estes testes verificam a parte
 // PURA da lógica: o cálculo de delta. Para validar o efeito no banco
 // (incluindo lock pessimista e concorrência), rode o servidor contra um
@@ -54,8 +58,14 @@ fn diff_criacao_inicial() {
     // Convenção: delta NEGATIVO = estoque DECRESCE (peça adicionada à OS).
     let antigo: HashMap<u32, i32> = HashMap::new();
     let novo = agregar(&[
-        Peca { id: 1, quantidade: 3 },
-        Peca { id: 2, quantidade: 5 },
+        Peca {
+            id: 1,
+            quantidade: 3,
+        },
+        Peca {
+            id: 2,
+            quantidade: 5,
+        },
     ]);
     let diffs = calcular_diff(&antigo, &novo);
     assert_eq!(diffs, vec![(1, -3), (2, -5)]);
@@ -140,8 +150,14 @@ fn diff_repeticao_nao_corrompe() {
 fn diff_pecas_agregadas_duplicadas() {
     // Duas entradas com mesmo id_peca devem ser somadas.
     let pecas = vec![
-        Peca { id: 1, quantidade: 2 },
-        Peca { id: 1, quantidade: 3 },
+        Peca {
+            id: 1,
+            quantidade: 2,
+        },
+        Peca {
+            id: 1,
+            quantidade: 3,
+        },
     ];
     let agg = agregar(&pecas);
     assert_eq!(agg[&1], 5);

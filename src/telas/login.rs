@@ -1,5 +1,6 @@
 // src/telas/login.rs
 
+#[allow(unused_imports)]
 use crate::http_client::{STORAGE_KEY_PAPEL, STORAGE_KEY_TOKEN};
 use crate::servicos::{ErroAplicacao, PapelUsuario};
 use eframe::egui::{self, Align2, Color32, TextureHandle};

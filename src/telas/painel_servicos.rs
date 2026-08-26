@@ -15,7 +15,8 @@ impl TelaServicos {
         let lista = Arc::new(Mutex::new(None));
         let lista_bg = Arc::clone(&lista);
         crate::executor::spawn(move || {
-            let l = crate::servicos::listar_servicos();
+            let t = crate::servicos::tenant_padrao();
+            let l = crate::servicos::listar_servicos(t);
             if let Ok(mut g) = lista_bg.lock() {
                 *g = Some(l);
             }
@@ -51,8 +52,9 @@ impl TelaServicos {
                 // criar e recarregar em background
                 let lista_for_update = Arc::clone(&self.lista);
                 crate::executor::spawn(move || {
-                    let _ = crate::servicos::criar_servico(&s);
-                    let l = crate::servicos::listar_servicos();
+                    let t = crate::servicos::tenant_padrao();
+                    let _ = crate::servicos::criar_servico(t, &s);
+                    let l = crate::servicos::listar_servicos(t);
                     if let Ok(mut g) = lista_for_update.lock() {
                         *g = Some(l);
                     }

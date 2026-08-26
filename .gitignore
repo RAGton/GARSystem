@@ -68,3 +68,5 @@ backups/
 *.key
 *.crt
 secrets/
+.mavis/
+examples/

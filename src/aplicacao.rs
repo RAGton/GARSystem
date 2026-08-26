@@ -68,6 +68,8 @@ pub struct AplicativoPrincipal {
     logo: Option<TextureHandle>,
     logo_data: Option<ColorImage>,
     endereco_servidor: Arc<Mutex<String>>,
+    /// Handle para a URL base, usado pela camada `gui_services`.
+    base_handle: crate::gui_services::BaseHandle,
     usuario_logado: Option<String>,
     /// Token JWT do usuário logado. Compartilhado com as telas
     /// via `Arc<Mutex<Option<String>>>` para que cada uma possa
@@ -124,6 +126,7 @@ impl AplicativoPrincipal {
         }
 
         let endereco_servidor = Arc::new(Mutex::new(endereco_servidor_str));
+        let base_handle = crate::gui_services::BaseHandle::new(Arc::clone(&endereco_servidor));
         let token_jwt_inicial = cc
             .storage
             .and_then(|s| s.get_string(crate::http_client::STORAGE_KEY_TOKEN))
@@ -151,6 +154,7 @@ impl AplicativoPrincipal {
             logo: None,
             logo_data,
             endereco_servidor,
+            base_handle,
             token_jwt,
             overlay_criar_os: None,
             usuario_logado: None,
@@ -450,12 +454,18 @@ impl AplicativoPrincipal {
                     if tela == TelaAtiva::CriarOs {
                         if self.tela_ativa == TelaAtiva::Ordens {
                             self.overlay_criar_os = Some(TelaCriarOs::new(
-                                Arc::clone(&self.endereco_servidor),
+                                self.base_handle.clone(),
+                                Arc::clone(&self.token_jwt),
                                 self.usuario_logado.clone(),
                             ));
                             // Garantir que continuamos com uma tela ativa (Ordens)
                             self.estado_tela = Some(
-                                TelaOrdens::new(papel, Arc::clone(&self.endereco_servidor)).into(),
+                                TelaOrdens::new(
+                                    papel,
+                                    self.base_handle.clone(),
+                                    Arc::clone(&self.token_jwt),
+                                )
+                                .into(),
                             );
                             return;
                         }
@@ -463,39 +473,67 @@ impl AplicativoPrincipal {
 
                     self.tela_ativa = tela;
                     let novo_estado = match tela {
-                        TelaAtiva::Dashboard => {
-                            TelaDashboard::new(papel, Arc::clone(&self.endereco_servidor)).into()
-                        }
+                        TelaAtiva::Dashboard => TelaDashboard::new(
+                            papel,
+                            self.base_handle.clone(),
+                            Arc::clone(&self.token_jwt),
+                        )
+                        .into(),
                         TelaAtiva::Clientes => {
-                            TelaClientes::new(Arc::clone(&self.endereco_servidor)).into()
+                            TelaClientes::new(self.base_handle.clone(), Arc::clone(&self.token_jwt))
+                                .into()
                         }
                         TelaAtiva::Admin => {
-                            TelaAdmin::new(
-                                Arc::clone(&self.endereco_servidor),
-                                Arc::clone(&self.token_jwt),
-                            )
-                            .into()
+                            TelaAdmin::new(self.base_handle.clone(), Arc::clone(&self.token_jwt))
+                                .into()
                         }
                         TelaAtiva::Tecnico => {
-                            TelaTecnico::new(Arc::clone(&self.endereco_servidor)).into()
+                            TelaTecnico::new(self.base_handle.clone(), Arc::clone(&self.token_jwt))
+                                .into()
                         }
-                        TelaAtiva::Ordens => {
-                            TelaOrdens::new(papel, Arc::clone(&self.endereco_servidor)).into()
-                        }
+                        TelaAtiva::Ordens => TelaOrdens::new(
+                            papel,
+                            self.base_handle.clone(),
+                            Arc::clone(&self.token_jwt),
+                        )
+                        .into(),
                         TelaAtiva::CriarOs => TelaCriarOs::new(
-                            Arc::clone(&self.endereco_servidor),
+                            self.base_handle.clone(),
+                            Arc::clone(&self.token_jwt),
                             self.usuario_logado.clone(),
                         )
                         .into(),
-                        TelaAtiva::Financeiro => TelaFinanceiro::new().into(),
-                        TelaAtiva::Orcamentos => {
-                            TelaOrcamentos::new(Arc::clone(&self.endereco_servidor)).into()
+                        TelaAtiva::Financeiro => {
+                            if let Some(papel) = self.papel_usuario_logado {
+                                TelaFinanceiro::new(
+                                    1,
+                                    papel,
+                                    self.base_handle.clone(),
+                                    Arc::clone(&self.token_jwt),
+                                )
+                                .into()
+                            } else {
+                                TelaDashboard::new(
+                                    PapelUsuario::Comercial,
+                                    self.base_handle.clone(),
+                                    Arc::clone(&self.token_jwt),
+                                )
+                                .into()
+                            }
                         }
+                        TelaAtiva::Orcamentos => TelaOrcamentos::new(
+                            self.base_handle.clone(),
+                            Arc::clone(&self.token_jwt),
+                        )
+                        .into(),
                         TelaAtiva::Gerencia => TelaGerencia::new().into(),
                         TelaAtiva::Servicos => {
                             crate::telas::painel_servicos::TelaServicos::new().into()
                         }
-                        TelaAtiva::Estoque => TelaEstoque::new().into(),
+                        TelaAtiva::Estoque => {
+                            TelaEstoque::new(self.base_handle.clone(), Arc::clone(&self.token_jwt))
+                                .into()
+                        }
                     };
                     self.estado_tela = Some(novo_estado);
                 }
@@ -507,7 +545,8 @@ impl AplicativoPrincipal {
                 self.estado_tela = Some(
                     TelaOsEdicao::new(
                         os_id,
-                        Arc::clone(&self.endereco_servidor),
+                        self.base_handle.clone(),
+                        Arc::clone(&self.token_jwt),
                         self.usuario_logado
                             .clone()
                             .unwrap_or_else(|| "sistema".to_string()),
@@ -522,8 +561,14 @@ impl AplicativoPrincipal {
             AppEvent::VoltarParaDashboard => {
                 if let Some(papel) = self.papel_usuario_logado {
                     self.tela_ativa = TelaAtiva::Dashboard;
-                    self.estado_tela =
-                        Some(TelaDashboard::new(papel, Arc::clone(&self.endereco_servidor)).into());
+                    self.estado_tela = Some(
+                        TelaDashboard::new(
+                            papel,
+                            self.base_handle.clone(),
+                            Arc::clone(&self.token_jwt),
+                        )
+                        .into(),
+                    );
                 }
             }
         }

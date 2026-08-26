@@ -81,18 +81,27 @@ fn migrar_role_se_necessario(conn: &mut PooledConn) -> Result<bool, mysql::Error
                 .unwrap()
                 .as_secs();
             let nome_tabela_backup = format!("users_backup_{}", ts);
-            tx.query_drop(format!("CREATE TABLE `{}` LIKE `users`", nome_tabela_backup))?;
+            tx.query_drop(format!(
+                "CREATE TABLE `{}` LIKE `users`",
+                nome_tabela_backup
+            ))?;
             tx.query_drop(format!(
                 "INSERT INTO `{}` SELECT * FROM `users`",
                 nome_tabela_backup
             ))?;
             println!("Backup criado: '{}'.", nome_tabela_backup);
-            tx.exec_drop("UPDATE users SET role = 'Administrador' WHERE role = 'ADM'", ())?;
+            tx.exec_drop(
+                "UPDATE users SET role = 'Administrador' WHERE role = 'ADM'",
+                (),
+            )?;
             tx.exec_drop(
                 "UPDATE users SET role = 'Comercial' WHERE role IN ('Vendedor', 'Atendente')",
                 (),
             )?;
-            tx.exec_drop("UPDATE users SET role = 'Gerencia' WHERE role = 'Gerente'", ())?;
+            tx.exec_drop(
+                "UPDATE users SET role = 'Gerencia' WHERE role = 'Gerente'",
+                (),
+            )?;
             tx.exec_drop(
                 "ALTER TABLE users MODIFY COLUMN role ENUM('Administrador', 'Gerencia', 'Tecnico', 'Financeiro', 'Comercial', 'Estoquista') NOT NULL DEFAULT 'Comercial'",
                 (),

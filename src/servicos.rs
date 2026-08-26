@@ -130,12 +130,13 @@ pub struct ServicoOS {
 }
 
 // Persistência de serviços: delega ao módulo de banco_de_dados
-pub fn listar_servicos_db() -> Result<Vec<Servico>, ErroAplicacao> {
-    crate::banco_de_dados::servico::listar_servicos()
+// (P2.6.2a) tenant_id obrigatório.
+pub fn listar_servicos_db(tenant_id: i32) -> Result<Vec<Servico>, ErroAplicacao> {
+    crate::banco_de_dados::servico::listar_servicos(tenant_id)
 }
 
-pub fn listar_servicos() -> Vec<Servico> {
-    match listar_servicos_db() {
+pub fn listar_servicos(tenant_id: i32) -> Vec<Servico> {
+    match listar_servicos_db(tenant_id) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("Erro ao listar serviços do banco: {}", e);
@@ -144,12 +145,12 @@ pub fn listar_servicos() -> Vec<Servico> {
     }
 }
 
-pub fn criar_servico_db(s: &Servico) -> Result<u32, ErroAplicacao> {
-    crate::banco_de_dados::servico::criar_servico(s)
+pub fn criar_servico_db(tenant_id: i32, s: &Servico) -> Result<u32, ErroAplicacao> {
+    crate::banco_de_dados::servico::criar_servico(tenant_id, s)
 }
 
-pub fn criar_servico(s: &Servico) -> u32 {
-    match criar_servico_db(s) {
+pub fn criar_servico(tenant_id: i32, s: &Servico) -> u32 {
+    match criar_servico_db(tenant_id, s) {
         Ok(id) => id,
         Err(e) => {
             eprintln!("Erro ao criar serviço no banco: {}", e);
@@ -158,8 +159,8 @@ pub fn criar_servico(s: &Servico) -> u32 {
     }
 }
 
-pub fn listar_pecas() -> Result<Vec<Peca>, ErroAplicacao> {
-    crate::banco_de_dados::estoque::listar_pecas()
+pub fn listar_pecas(tenant_id: i32) -> Result<Vec<Peca>, ErroAplicacao> {
+    crate::banco_de_dados::estoque::listar_pecas(tenant_id)
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -323,7 +324,10 @@ impl From<serde_json::Error> for ErroAplicacao {
 pub fn inicializar() {
     crate::banco_de_dados::inicializar();
 }
-pub fn verificar_login(u: &str, s: &str) -> Result<PapelUsuario, ErroAplicacao> {
+pub fn verificar_login(
+    u: &str,
+    s: &str,
+) -> Result<crate::banco_de_dados::LoginResult, ErroAplicacao> {
     crate::banco_de_dados::verificar_senha_e_obter_papel(u, s)
 }
 pub fn criar_usuario(u: &str, s: &str, p: PapelUsuario) -> Result<(), ErroAplicacao> {
@@ -335,40 +339,56 @@ pub fn listar_usuarios() -> Vec<InfoUsuario> {
 pub fn remover_usuario(u: &str) -> Result<(), ErroAplicacao> {
     crate::banco_de_dados::remover_usuario(u)
 }
-pub fn listar_ordens_servico() -> Result<Vec<OrdemServico>, ErroAplicacao> {
-    crate::banco_de_dados::listar_ordens_servico()
+pub fn listar_ordens_servico(tenant_id: i32) -> Result<Vec<OrdemServico>, ErroAplicacao> {
+    crate::banco_de_dados::listar_ordens_servico(tenant_id)
 }
-pub fn buscar_os_por_id(id: u32) -> Result<OrdemServico, ErroAplicacao> {
-    crate::banco_de_dados::buscar_os_por_id(id)
+pub fn buscar_os_por_id(tenant_id: i32, id: u32) -> Result<OrdemServico, ErroAplicacao> {
+    crate::banco_de_dados::buscar_os_por_id(tenant_id, id)
 }
-pub fn atualizar_os(os: &OrdemServico, usuario_logado: &str) -> Result<(), ErroAplicacao> {
-    crate::banco_de_dados::atualizar_os(os, usuario_logado)
-}
-
-pub fn criar_ordem_servico(os: &mut OrdemServico) -> Result<u32, ErroAplicacao> {
-    crate::banco_de_dados::ordem_servico::criar_os(os)
-}
-
-// Orçamentos: facades para criar/obter orçamentos
-pub fn criar_orcamento(o: &Orcamento) -> Result<u32, ErroAplicacao> {
-    crate::banco_de_dados::criar_orcamento(o)
+pub fn atualizar_os(
+    tenant_id: i32,
+    os: &OrdemServico,
+    usuario_logado: &str,
+) -> Result<(), ErroAplicacao> {
+    crate::banco_de_dados::atualizar_os(tenant_id, os, usuario_logado)
 }
 
-pub fn obter_orcamento(id: u32) -> Result<Orcamento, ErroAplicacao> {
-    crate::banco_de_dados::obter_orcamento(id)
+pub fn criar_ordem_servico(tenant_id: i32, os: &mut OrdemServico) -> Result<u32, ErroAplicacao> {
+    crate::banco_de_dados::ordem_servico::criar_os(tenant_id, os)
 }
 
-// --- Clientes: fachada para chamadas ao banco ---
-pub fn listar_clientes() -> Result<Vec<Cliente>, ErroAplicacao> {
-    crate::banco_de_dados::listar_clientes()
+// Orçamentos: facades para criar/obter orçamentos (P2.6.2a)
+pub fn criar_orcamento(tenant_id: i32, o: &Orcamento) -> Result<u32, ErroAplicacao> {
+    crate::banco_de_dados::criar_orcamento(tenant_id, o)
 }
 
-pub fn obter_gastos_e_credito(cliente_id: u32) -> Result<(f64, f64), ErroAplicacao> {
-    let gastos = crate::banco_de_dados::obter_gastos_por_cliente(cliente_id)?;
-    let credito = crate::banco_de_dados::obter_credito_cliente(cliente_id)?;
+pub fn obter_orcamento(tenant_id: i32, id: u32) -> Result<Orcamento, ErroAplicacao> {
+    crate::banco_de_dados::obter_orcamento(tenant_id, id)
+}
+
+// --- Helper de tenant padrão (P2.6.2a) ---
+// Em produção, extrair de `Claims::tenant_do_usuario()`.
+// Para GUI/desktop single-user atual, mantém compat com tenant `1` (legacy).
+pub const TENANT_LEGACY: i32 = 1;
+
+pub fn tenant_padrao() -> i32 {
+    TENANT_LEGACY
+}
+
+// --- Clientes: fachada para chamadas ao banco (P2.6.2a — tenant_id obrigatório) ---
+pub fn listar_clientes(tenant_id: i32) -> Result<Vec<Cliente>, ErroAplicacao> {
+    crate::banco_de_dados::listar_clientes(tenant_id)
+}
+
+pub fn obter_gastos_e_credito(
+    tenant_id: i32,
+    cliente_id: u32,
+) -> Result<(f64, f64), ErroAplicacao> {
+    let gastos = crate::banco_de_dados::obter_gastos_por_cliente(tenant_id, cliente_id)?;
+    let credito = crate::banco_de_dados::obter_credito_cliente(tenant_id, cliente_id)?;
     Ok((gastos, credito))
 }
 
-pub fn criar_ou_atualizar_cliente(c: &Cliente) -> Result<u32, ErroAplicacao> {
-    crate::banco_de_dados::criar_ou_atualizar_cliente(c)
+pub fn criar_ou_atualizar_cliente(tenant_id: i32, c: &Cliente) -> Result<u32, ErroAplicacao> {
+    crate::banco_de_dados::criar_ou_atualizar_cliente(tenant_id, c)
 }

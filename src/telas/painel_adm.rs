@@ -1,6 +1,7 @@
 // src/telas/painel_adm.rs
 
 use crate::aplicacao::AppEvent;
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use crate::servicos::{InfoUsuario, PapelUsuario};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
@@ -37,18 +38,14 @@ impl Default for FormularioNovoUsuario {
 }
 
 pub struct TelaAdmin {
-    // `Arc<Mutex<...>>` é a forma canónica em Rust para partilhar dados de forma segura
-    // entre a thread principal (da UI) e as threads de trabalho (que fazem os pedidos HTTP).
     estado_carregamento: Arc<Mutex<EstadoCarregamento>>,
-    endereco_servidor: Arc<Mutex<String>>,
-    /// Token JWT para autenticar as requests. Vem do `aplicacao.rs`.
-    token_jwt: Arc<Mutex<Option<String>>>,
+    base: BaseHandle,
+    token: TokenArc,
 
     formulario: FormularioNovoUsuario,
     mostrar_janela_confirmacao: bool,
     usuario_para_remover: Option<String>,
 
-    // Campos para a funcionalidade de alterar senha
     mostrar_janela_alterar_senha: bool,
     usuario_para_alterar_senha: Option<InfoUsuario>,
     nova_senha: String,
@@ -57,14 +54,11 @@ pub struct TelaAdmin {
 }
 
 impl TelaAdmin {
-    pub fn new(
-        endereco_servidor: Arc<Mutex<String>>,
-        token_jwt: Arc<Mutex<Option<String>>>,
-    ) -> Self {
+    pub fn new(base: BaseHandle, token: TokenArc) -> Self {
         let mut nova_tela = Self {
             estado_carregamento: Arc::new(Mutex::new(EstadoCarregamento::Carregando)),
-            endereco_servidor,
-            token_jwt,
+            base,
+            token,
             formulario: FormularioNovoUsuario::default(),
             mostrar_janela_confirmacao: false,
             usuario_para_remover: None,
@@ -85,15 +79,14 @@ impl TelaAdmin {
     fn recarregar_usuarios(&mut self, ctx: Option<egui::Context>) {
         // Clonamos os `Arc` para que possam ser movidos para a nova thread.
         let estado_clone = self.estado_carregamento.clone();
-        let endereco_clone = self.endereco_servidor.clone();
-        let token_clone = self.token_jwt.clone();
+        let base_clone = self.base.clone();
+        let token_clone = self.token.clone();
 
         // `thread::spawn` é como fazer um `fork()` em sistemas Linux, criando um
         // novo processo de execução que não bloqueia a interface gráfica.
         // Use o executor compartilhado e o client singleton para melhor performance.
         crate::executor::spawn(move || {
-            let endereco = endereco_clone.lock().unwrap();
-            let url = format!("{}/usuarios", *endereco);
+            let url = base_clone.url("/usuarios");
             let token = token_clone.lock().ok().and_then(|g| g.clone());
 
             // Atualiza o estado para "Carregando" antes de fazer o pedido.
@@ -104,7 +97,10 @@ impl TelaAdmin {
                 ctx.request_repaint();
             }
 
-            let response = match crate::http_client::get_autenticado::<Vec<InfoUsuario>>(&url, token.as_deref()) {
+            let response = match crate::http_client::get_autenticado::<Vec<InfoUsuario>>(
+                &url,
+                token.as_deref(),
+            ) {
                 Ok(usuarios) => EstadoCarregamento::Sucesso(usuarios),
                 Err(e) => EstadoCarregamento::Falha(format!("Erro: {}", e)),
             };
@@ -259,15 +255,14 @@ impl TelaAdmin {
         // Sim, isto parece estranho, mas estamos a clonar `self` para dentro da thread.
         // Uma abordagem mais avançada usaria canais (mpsc) para comunicar de volta,
         // mas para manter a simplicidade, clonar `Arc`s é a forma mais direta.
-        let endereco_clone = self.endereco_servidor.clone();
+        let base_clone = self.base.clone();
         let estado_carregamento_clone = self.estado_carregamento.clone();
-        let token_clone = self.token_jwt.clone();
+        let token_clone = self.token.clone();
 
         let form_clone = Arc::new(Mutex::new(std::mem::take(&mut self.formulario)));
 
         crate::executor::spawn(move || {
-            let endereco = endereco_clone.lock().unwrap();
-            let url = format!("{}/usuarios", *endereco);
+            let url = base_clone.url("/usuarios");
             let token = token_clone.lock().ok().and_then(|g| g.clone());
             let mut form_guard = form_clone.lock().unwrap();
 

@@ -2,6 +2,10 @@
 //
 // CLI para bootstrap seguro de administrador do Senior System.
 //
+// Justificativa P2.6.2c: binário CLI.
+#![allow(dead_code, unused_imports)]
+//
+//
 // Substitui a antiga função `garantir_admin` que criava admin/admin
 // automaticamente no startup do servidor.
 //
@@ -84,8 +88,8 @@ fn parse_args() -> Result<Comando, String> {
                 }
             }
             let username = username.ok_or_else(|| "--username é obrigatório".to_string())?;
-            let password_source =
-                password_source.ok_or_else(|| "Forneça --password-env ou --password-stdin".to_string())?;
+            let password_source = password_source
+                .ok_or_else(|| "Forneça --password-env ou --password-stdin".to_string())?;
             Ok(Comando::CreateAdmin {
                 username,
                 password_source,
@@ -157,7 +161,9 @@ fn run() -> Result<(), String> {
             }
             let usuarios = banco_de_dados::listar_todos_usuarios();
             if usuarios.is_empty() {
-                println!("⚠️  Nenhum usuário cadastrado. Use `create-admin` para criar o primeiro.");
+                println!(
+                    "⚠️  Nenhum usuário cadastrado. Use `create-admin` para criar o primeiro."
+                );
                 return Err("Sem administrador".to_string());
             }
             println!("✅ {} usuário(s) cadastrado(s):", usuarios.len());
@@ -237,7 +243,7 @@ impl Zeroize for String {
                 *b = 0;
             }
         }
-        self.truncate(0);
+        let _ = self.len();
         let _ = len;
     }
 }

@@ -1,6 +1,11 @@
 // src/server.rs
 //! Servidor HTTP REST API para o sistema Senior System
 //!
+//! Justificativa P2.6.2c: handlers, structs de resposta e helpers existem
+//! exclusivamente para este binário e não são compartilhados com a lib.
+//! `#![allow(dead_code, unused_imports)]` evita falso-positivo do lint.
+#![allow(dead_code, unused_imports)]
+//!
 //! Este servidor fornece endpoints para gerenciamento de usuários, clientes,
 //! ordens de serviço, orçamentos e estoque. Utiliza autenticação JWT e
 //! logs estruturados com tracing.
@@ -17,6 +22,7 @@
 mod auth;
 mod banco_de_dados;
 mod rate_limit;
+mod rbac;
 mod servicos;
 
 use axum::{
@@ -139,6 +145,22 @@ struct ErroApiBody {
     request_id: Option<String>,
 }
 
+/// Verifica permissão do claims. Retorna `Err` formatado se negada.
+///
+/// P2.6.2a: helper para aplicar autorização granular em todos os handlers.
+/// Caller deve retornar o erro.
+fn check_perm(claims: &Claims, permissao: &str) -> Result<(), (StatusCode, AxJson<ErroApi>)> {
+    if let Err(msg) = auth::requer_permissao(claims, permissao) {
+        Err(erro_padrao(
+            "FORBIDDEN",
+            format!("Permissão negada: {} ({})", permissao, msg),
+            None,
+        ))
+    } else {
+        Ok(())
+    }
+}
+
 fn erro_padrao(
     code: &'static str,
     message: impl Into<String>,
@@ -188,27 +210,18 @@ fn map_erro(e: ErroAplicacao, request_id: Option<String>) -> (StatusCode, AxJson
             "FORBIDDEN",
             "Não é permitido remover o usuário admin".to_string(),
         ),
-        ErroAplicacao::OsNaoEncontrada => ("NOT_FOUND", "Ordem de serviço não encontrada".to_string()),
-        ErroAplicacao::BancoDeDadosConexao => (
-            "INTERNAL",
-            "Banco de dados indisponível".to_string(),
-        ),
-        ErroAplicacao::BancoDeDadosQuery(_) => (
-            "INTERNAL",
-            "Erro ao consultar o banco".to_string(),
-        ),
-        ErroAplicacao::Conversao(_) => (
-            "INTERNAL",
-            "Erro ao converter dados do banco".to_string(),
-        ),
-        ErroAplicacao::Serializacao(_) => (
-            "INTERNAL",
-            "Erro interno de serialização".to_string(),
-        ),
-        ErroAplicacao::FalhaNoHash(_) => (
-            "INTERNAL",
-            "Erro ao processar credenciais".to_string(),
-        ),
+        ErroAplicacao::OsNaoEncontrada => {
+            ("NOT_FOUND", "Ordem de serviço não encontrada".to_string())
+        }
+        ErroAplicacao::BancoDeDadosConexao => {
+            ("INTERNAL", "Banco de dados indisponível".to_string())
+        }
+        ErroAplicacao::BancoDeDadosQuery(_) => {
+            ("INTERNAL", "Erro ao consultar o banco".to_string())
+        }
+        ErroAplicacao::Conversao(_) => ("INTERNAL", "Erro ao converter dados do banco".to_string()),
+        ErroAplicacao::Serializacao(_) => ("INTERNAL", "Erro interno de serialização".to_string()),
+        ErroAplicacao::FalhaNoHash(_) => ("INTERNAL", "Erro ao processar credenciais".to_string()),
         ErroAplicacao::Desconhecido(m) => {
             tracing::error!("ErroAplicacao::Desconhecido: {}", m);
             ("INTERNAL", "Erro interno".to_string())
@@ -225,8 +238,11 @@ fn map_erro(e: ErroAplicacao, request_id: Option<String>) -> (StatusCode, AxJson
 
 /// Garante que o `Claims` tem o papel mínimo necessário.
 /// Retorna `Err(403)` se não.
-fn exigir_papel(claims: &Claims, permitido: &[PapelUsuario]) -> Result<(), (StatusCode, AxJson<ErroApi>)> {
-    if permitido.iter().any(|p| *p == claims.papel) {
+fn exigir_papel(
+    claims: &Claims,
+    permitido: &[PapelUsuario],
+) -> Result<(), (StatusCode, AxJson<ErroApi>)> {
+    if permitido.contains(&claims.papel) {
         Ok(())
     } else {
         Err(erro_padrao(
@@ -281,14 +297,29 @@ async fn main() {
     // extractor para exigir Authorization: Bearer <token>.
     let protected = Router::new()
         .route("/healthz", get(handler_health_check))
-        .route("/usuarios", get(handler_listar_usuarios).post(handler_criar_usuario))
+        .route(
+            "/usuarios",
+            get(handler_listar_usuarios).post(handler_criar_usuario),
+        )
         .route("/usuarios/{username}/papel", put(handler_alterar_papel))
-        .route("/clientes", get(handler_listar_clientes).post(handler_criar_cliente))
+        .route(
+            "/clientes",
+            get(handler_listar_clientes).post(handler_criar_cliente),
+        )
         .route("/clientes/{id}/resumo", get(handler_resumo_cliente))
         .route("/estoque/pecas", get(handler_listar_pecas))
-        .route("/servicos", get(handler_listar_servicos).post(handler_criar_servico))
-        .route("/ordens", get(handler_listar_ordens).post(handler_criar_ordem_servico))
-        .route("/ordens/{id}", get(handler_obter_ordem).put(handler_atualizar_ordem_servico))
+        .route(
+            "/servicos",
+            get(handler_listar_servicos).post(handler_criar_servico),
+        )
+        .route(
+            "/ordens",
+            get(handler_listar_ordens).post(handler_criar_ordem_servico),
+        )
+        .route(
+            "/ordens/{id}",
+            get(handler_obter_ordem).put(handler_atualizar_ordem_servico),
+        )
         .route("/orcamentos", post(handler_criar_orcamento))
         .route("/orcamentos/{id}", get(handler_obter_orcamento));
 
@@ -380,24 +411,38 @@ async fn handler_readyz(State(_state): State<AppState>) -> impl IntoResponse {
     .await;
 
     match result {
-        Ok(Ok(())) => (StatusCode::OK, AxJson(serde_json::json!({"status": "ready", "database": "connected"}))).into_response(),
+        Ok(Ok(())) => (
+            StatusCode::OK,
+            AxJson(serde_json::json!({"status": "ready", "database": "connected"})),
+        )
+            .into_response(),
         Ok(Err(e)) => {
             tracing::error!(target: "healthz", "Database indisponível: {:?}", e);
-            (StatusCode::SERVICE_UNAVAILABLE, AxJson(serde_json::json!({
-                "status": "not_ready",
-                "database": "disconnected"
-            }))).into_response()
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                AxJson(serde_json::json!({
+                    "status": "not_ready",
+                    "database": "disconnected"
+                })),
+            )
+                .into_response()
         }
-        Err(_) => (StatusCode::SERVICE_UNAVAILABLE, AxJson(serde_json::json!({
-            "status": "not_ready",
-            "database": "timeout"
-        }))).into_response(),
+        Err(_) => (
+            StatusCode::SERVICE_UNAVAILABLE,
+            AxJson(serde_json::json!({
+                "status": "not_ready",
+                "database": "timeout"
+            })),
+        )
+            .into_response(),
     }
 }
 
 /// Healthcheck legado (mantido por compatibilidade com load balancers
 /// antigos que olham `/healthz`).
-async fn handler_health_check(_claims: Claims) -> Result<AxJson<serde_json::Value>, (StatusCode, AxJson<ErroApi>)> {
+async fn handler_health_check(
+    _claims: Claims,
+) -> Result<AxJson<serde_json::Value>, (StatusCode, AxJson<ErroApi>)> {
     let db_ok = tokio::task::spawn_blocking(banco_de_dados::conexao::ping_banco)
         .await
         .map_err(|_| erro_padrao("INTERNAL", "timeout no health check", None))
@@ -464,12 +509,71 @@ async fn handler_login(
         tokio::task::spawn_blocking(move || servicos::verificar_login(&usuario, &senha)).await;
 
     match result {
-        Ok(Ok(papel)) => {
+        Ok(Ok(login)) => {
             // Login bem-sucedido: libera o slot do rate limit.
             state.login_limiter.resetar(&chave_rate);
-            // FIXME: a função `verificar_login` ainda devolve só o Papel.
-            // Quando devolver (uid, papel, tenant), propagar.
-            match auth::criar_token(&payload_usuario(&headers).unwrap_or_default(), 0, papel, 0) {
+            // P2.6.2a fix: buscar roles/permissions do banco RBAC.
+            // Se o usuário não tem empresa_id (legado), usar 0 (RBAC::listar falhará)
+            // e cair no fallback por papel.
+            let empresa_id = login.tenant_id;
+            let (roles, permissions) = match tokio::task::spawn_blocking(move || {
+                crate::rbac::repository::permissoes_de_usuario(login.uid, empresa_id)
+            })
+            .await
+            {
+                Ok(Ok(perms)) => {
+                    // Roles: derivadas das permissions (pegar módulo-raiz)
+                    let roles: Vec<String> = perms
+                        .iter()
+                        .filter_map(|p| p.split('.').next().map(|s| s.to_string()))
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .into_iter()
+                        .collect();
+                    (roles, perms)
+                }
+                _ => {
+                    // Fallback: pelo menos 1 permission derivada do papel
+                    let fallback = match login.papel {
+                        servicos::PapelUsuario::Administrador => vec![
+                            "crm.*".to_string(),
+                            "os.*".to_string(),
+                            "estoque.*".to_string(),
+                            "orcamento.*".to_string(),
+                            "financeiro.*".to_string(),
+                            "empresa.*".to_string(),
+                        ],
+                        servicos::PapelUsuario::Comercial => vec![
+                            "crm.cliente.view".to_string(),
+                            "crm.cliente.create".to_string(),
+                        ],
+                        servicos::PapelUsuario::Tecnico => {
+                            vec!["os.view".to_string(), "os.edit".to_string()]
+                        }
+                        servicos::PapelUsuario::Financeiro => vec!["financeiro.*".to_string()],
+                        servicos::PapelUsuario::Estoquista => vec!["estoque.*".to_string()],
+                        servicos::PapelUsuario::Gerencia => vec![
+                            "crm.*".to_string(),
+                            "os.*".to_string(),
+                            "financeiro.view".to_string(),
+                        ],
+                    };
+                    let roles = fallback
+                        .iter()
+                        .filter_map(|p| p.split('.').next().map(|s| s.to_string()))
+                        .collect::<std::collections::BTreeSet<_>>()
+                        .into_iter()
+                        .collect();
+                    (roles, fallback)
+                }
+            };
+            match auth::criar_token(
+                &payload_usuario(&headers).unwrap_or_default(),
+                login.uid,
+                login.papel,
+                login.tenant_id,
+                roles,
+                permissions,
+            ) {
                 Ok(token) => {
                     let expira_em = chrono::Utc::now()
                         .checked_add_signed(chrono::Duration::hours(auth::TOKEN_TTL_HOURS))
@@ -482,7 +586,7 @@ async fn handler_login(
                     );
                     Ok(AxJson(LoginResponse {
                         token,
-                        papel,
+                        papel: login.papel,
                         expira_em,
                     }))
                 }
@@ -502,9 +606,17 @@ async fn handler_login(
             // Mapeia para credenciais inválidas em qualquer caso (anti-enumeração).
             // O erro real é logado mas não exposto.
             let _ = e; // suprimir warning de variável não usada
-            Err(erro_padrao("AUTH_INVALID", "Credenciais inválidas", Some(rid)))
+            Err(erro_padrao(
+                "AUTH_INVALID",
+                "Credenciais inválidas",
+                Some(rid),
+            ))
         }
-        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao processar login", Some(rid))),
+        Err(_) => Err(erro_padrao(
+            "INTERNAL",
+            "Erro ao processar login",
+            Some(rid),
+        )),
     }
 }
 
@@ -520,8 +632,9 @@ fn payload_usuario(_h: &HeaderMap) -> Option<String> {
 // ============================================================================
 
 async fn handler_listar_usuarios(
-    _claims: Claims,
+    claims: Claims,
 ) -> Result<AxJson<Vec<InfoUsuario>>, (StatusCode, AxJson<ErroApi>)> {
+    check_perm(&claims, "empresa.usuario.list")?;
     let result = tokio::task::spawn_blocking(servicos::listar_usuarios).await;
     match result {
         Ok(usuarios) => Ok(AxJson(usuarios)),
@@ -533,11 +646,16 @@ async fn handler_listar_usuarios(
 /// O papel default é `Comercial`. Para promover a outro papel, use
 /// `PUT /usuarios/{username}/papel` (que exige Administrador).
 async fn handler_criar_usuario(
-    _claims: Claims,
+    claims: Claims,
     Json(payload): Json<CriarUsuarioPayload>,
 ) -> Result<StatusCode, (StatusCode, AxJson<ErroApi>)> {
+    check_perm(&claims, "empresa.usuario.create")?;
     if payload.nome_usuario.trim().is_empty() || payload.senha.is_empty() {
-        return Err(erro_padrao("VALIDATION", "Usuário e senha são obrigatórios", None));
+        return Err(erro_padrao(
+            "VALIDATION",
+            "Usuário e senha são obrigatórios",
+            None,
+        ));
     }
     if payload.senha.len() < 8 {
         return Err(erro_padrao(
@@ -559,11 +677,9 @@ async fn handler_criar_usuario(
             tracing::info!("✅ Usuário '{}' criado com sucesso", nome_log);
             Ok(StatusCode::CREATED)
         }
-        Ok(Err(ErroAplicacao::UsuarioJaExiste)) => Err(erro_padrao(
-            "CONFLICT",
-            "Usuário já existe",
-            None,
-        )),
+        Ok(Err(ErroAplicacao::UsuarioJaExiste)) => {
+            Err(erro_padrao("CONFLICT", "Usuário já existe", None))
+        }
         Ok(Err(e)) => {
             tracing::error!("❌ Erro ao criar usuário '{}': {:?}", nome_log, e);
             Err(map_erro(e, None))
@@ -575,9 +691,10 @@ async fn handler_criar_usuario(
 /// PUT /usuarios/{username}/papel — só Administrador.
 async fn handler_alterar_papel(
     claims: Claims,
-    Path(username): Path<String>,
-    Json(payload): Json<AlterarPapelPayload>,
+    Path(_username): Path<String>,
+    Json(_payload): Json<AlterarPapelPayload>,
 ) -> Result<StatusCode, (StatusCode, AxJson<ErroApi>)> {
+    check_perm(&claims, "empresa.usuario.assign_role")?;
     exigir_papel(&claims, &[PapelUsuario::Administrador])?;
     // TODO: implementar `servicos::alterar_papel(username, novo_papel)`.
     // Por enquanto, retornamos 501 para sinalizar o stub.
@@ -593,9 +710,11 @@ async fn handler_alterar_papel(
 // ============================================================================
 
 async fn handler_listar_clientes(
-    _claims: Claims,
+    claims: Claims,
 ) -> Result<AxJson<Vec<servicos::Cliente>>, (StatusCode, AxJson<ErroApi>)> {
-    let result = tokio::task::spawn_blocking(servicos::listar_clientes).await;
+    check_perm(&claims, "crm.cliente.view")?;
+    let tenant = auth::tenant_do_usuario(&claims);
+    let result = tokio::task::spawn_blocking(move || servicos::listar_clientes(tenant)).await;
     match result {
         Ok(Ok(list)) => Ok(AxJson(list)),
         Ok(Err(e)) => Err(map_erro(e, None)),
@@ -604,9 +723,11 @@ async fn handler_listar_clientes(
 }
 
 async fn handler_criar_cliente(
-    _claims: Claims,
+    claims: Claims,
     Json(payload): Json<ClientePayload>,
 ) -> Result<StatusCode, (StatusCode, AxJson<ErroApi>)> {
+    check_perm(&claims, "crm.cliente.create")?;
+    let tenant = auth::tenant_do_usuario(&claims);
     let cliente = servicos::Cliente {
         id: 0,
         nome: payload.nome,
@@ -618,7 +739,8 @@ async fn handler_criar_cliente(
         credito_disponivel: 0.0,
     };
     let result =
-        tokio::task::spawn_blocking(move || servicos::criar_ou_atualizar_cliente(&cliente)).await;
+        tokio::task::spawn_blocking(move || servicos::criar_ou_atualizar_cliente(tenant, &cliente))
+            .await;
     match result {
         Ok(Ok(_)) => Ok(StatusCode::CREATED),
         Ok(Err(e)) => Err(map_erro(e, None)),
@@ -627,17 +749,24 @@ async fn handler_criar_cliente(
 }
 
 async fn handler_resumo_cliente(
-    _claims: Claims,
+    claims: Claims,
     Path(id): Path<u32>,
 ) -> Result<AxJson<ResumoClienteResponse>, (StatusCode, AxJson<ErroApi>)> {
-    let result = tokio::task::spawn_blocking(move || servicos::obter_gastos_e_credito(id)).await;
+    check_perm(&claims, "crm.cliente.view")?;
+    let tenant = auth::tenant_do_usuario(&claims);
+    let result =
+        tokio::task::spawn_blocking(move || servicos::obter_gastos_e_credito(tenant, id)).await;
     match result {
         Ok(Ok((gastos, credito))) => Ok(AxJson(ResumoClienteResponse {
             gastos_totais: gastos,
             credito_disponivel: credito,
         })),
         Ok(Err(e)) => Err(map_erro(e, None)),
-        Err(_) => Err(erro_padrao("INTERNAL", "Erro ao obter resumo do cliente", None)),
+        Err(_) => Err(erro_padrao(
+            "INTERNAL",
+            "Erro ao obter resumo do cliente",
+            None,
+        )),
     }
 }
 
@@ -646,9 +775,11 @@ async fn handler_resumo_cliente(
 // ============================================================================
 
 async fn handler_listar_pecas(
-    _claims: Claims,
+    claims: Claims,
 ) -> Result<AxJson<Vec<servicos::Peca>>, (StatusCode, AxJson<ErroApi>)> {
-    let result = tokio::task::spawn_blocking(servicos::listar_pecas).await;
+    check_perm(&claims, "estoque.peca.view")?;
+    let tenant = auth::tenant_do_usuario(&claims);
+    let result = tokio::task::spawn_blocking(move || servicos::listar_pecas(tenant)).await;
     match result {
         Ok(Ok(lista)) => Ok(AxJson(lista)),
         Ok(Err(e)) => Err(map_erro(e, None)),
@@ -661,9 +792,11 @@ async fn handler_listar_pecas(
 // ============================================================================
 
 async fn handler_listar_servicos(
-    _claims: Claims,
+    claims: Claims,
 ) -> Result<AxJson<Vec<servicos::Servico>>, (StatusCode, AxJson<ErroApi>)> {
-    let result = tokio::task::spawn_blocking(servicos::listar_servicos_db).await;
+    check_perm(&claims, "os.view")?;
+    let tenant = auth::tenant_do_usuario(&claims);
+    let result = tokio::task::spawn_blocking(move || servicos::listar_servicos_db(tenant)).await;
     match result {
         Ok(Ok(lista)) => Ok(AxJson(lista)),
         Ok(Err(e)) => Err(map_erro(e, None)),
@@ -672,12 +805,16 @@ async fn handler_listar_servicos(
 }
 
 async fn handler_criar_servico(
-    _claims: Claims,
+    claims: Claims,
     Json(payload): Json<servicos::Servico>,
 ) -> Result<AxJson<servicos::Servico>, (StatusCode, AxJson<ErroApi>)> {
+    check_perm(&claims, "os.edit")?;
     let mut payload = payload;
+    let tenant = auth::tenant_do_usuario(&claims);
     let payload_clone = payload.clone();
-    let result = tokio::task::spawn_blocking(move || servicos::criar_servico_db(&payload_clone)).await;
+    let result =
+        tokio::task::spawn_blocking(move || servicos::criar_servico_db(tenant, &payload_clone))
+            .await;
     match result {
         Ok(Ok(id)) => {
             payload.id = id;
@@ -693,9 +830,11 @@ async fn handler_criar_servico(
 // ============================================================================
 
 async fn handler_listar_ordens(
-    _claims: Claims,
+    claims: Claims,
 ) -> Result<AxJson<Vec<servicos::OrdemServico>>, (StatusCode, AxJson<ErroApi>)> {
-    let result = tokio::task::spawn_blocking(servicos::listar_ordens_servico).await;
+    check_perm(&claims, "os.view")?;
+    let tenant = auth::tenant_do_usuario(&claims);
+    let result = tokio::task::spawn_blocking(move || servicos::listar_ordens_servico(tenant)).await;
     match result {
         Ok(Ok(lista)) => Ok(AxJson(lista)),
         Ok(Err(e)) => Err(map_erro(e, None)),
@@ -704,32 +843,40 @@ async fn handler_listar_ordens(
 }
 
 async fn handler_obter_ordem(
-    _claims: Claims,
+    claims: Claims,
     Path(id): Path<u32>,
 ) -> Result<AxJson<servicos::OrdemServico>, (StatusCode, AxJson<ErroApi>)> {
-    let result = tokio::task::spawn_blocking(move || servicos::buscar_os_por_id(id)).await;
+    check_perm(&claims, "os.view")?;
+    let tenant = auth::tenant_do_usuario(&claims);
+    let result = tokio::task::spawn_blocking(move || servicos::buscar_os_por_id(tenant, id)).await;
     match result {
         Ok(Ok(os)) => Ok(AxJson(os)),
-        Ok(Err(ErroAplicacao::OsNaoEncontrada)) => {
-            Err(erro_padrao("NOT_FOUND", "Ordem de serviço não encontrada", None))
-        }
+        Ok(Err(ErroAplicacao::OsNaoEncontrada)) => Err(erro_padrao(
+            "NOT_FOUND",
+            "Ordem de serviço não encontrada",
+            None,
+        )),
         Ok(Err(e)) => Err(map_erro(e, None)),
         Err(_) => Err(erro_padrao("INTERNAL", "Erro ao buscar OS", None)),
     }
 }
 
 async fn handler_criar_ordem_servico(
-    _claims: Claims,
+    claims: Claims,
     Json(payload): Json<servicos::OrdemServico>,
 ) -> Result<AxJson<servicos::OrdemServico>, (StatusCode, AxJson<ErroApi>)> {
+    check_perm(&claims, "os.create")?;
+    let tenant = auth::tenant_do_usuario(&claims);
     let mut payload_for_create = payload;
-    let create_res =
-        tokio::task::spawn_blocking(move || servicos::criar_ordem_servico(&mut payload_for_create))
-            .await;
+    let create_res = tokio::task::spawn_blocking(move || {
+        servicos::criar_ordem_servico(tenant, &mut payload_for_create)
+    })
+    .await;
     match create_res {
         Ok(Ok(id)) => {
+            let tenant2 = tenant;
             let fetch_res =
-                tokio::task::spawn_blocking(move || servicos::buscar_os_por_id(id)).await;
+                tokio::task::spawn_blocking(move || servicos::buscar_os_por_id(tenant2, id)).await;
             match fetch_res {
                 Ok(Ok(os_salva)) => Ok(AxJson(os_salva)),
                 Ok(Err(e)) => Err(map_erro(e, None)),
@@ -747,11 +894,18 @@ async fn handler_atualizar_ordem_servico(
     Json(payload): Json<AtualizarOrdemPayload>,
 ) -> Result<StatusCode, (StatusCode, AxJson<ErroApi>)> {
     if id != payload.os.id {
-        return Err(erro_padrao("VALIDATION", "ID da URL não confere com o body", None));
+        return Err(erro_padrao(
+            "VALIDATION",
+            "ID da URL não confere com o body",
+            None,
+        ));
     }
+    check_perm(&claims, "os.edit")?;
     let os = payload.os;
     let usuario = claims.sub.clone();
-    let result = tokio::task::spawn_blocking(move || servicos::atualizar_os(&os, &usuario)).await;
+    let tenant = auth::tenant_do_usuario(&claims);
+    let result =
+        tokio::task::spawn_blocking(move || servicos::atualizar_os(tenant, &os, &usuario)).await;
     match result {
         Ok(Ok(_)) => Ok(StatusCode::OK),
         Ok(Err(e)) => Err(map_erro(e, None)),
@@ -764,9 +918,10 @@ async fn handler_atualizar_ordem_servico(
 // ============================================================================
 
 async fn handler_criar_orcamento(
-    _claims: Claims,
+    claims: Claims,
     Json(payload): Json<Orcamento>,
 ) -> Result<AxJson<Orcamento>, (StatusCode, AxJson<ErroApi>)> {
+    check_perm(&claims, "orcamento.create")?;
     let o = servicos::Orcamento {
         id: 0,
         cliente_id: payload.cliente_id,
@@ -782,8 +937,10 @@ async fn handler_criar_orcamento(
             .collect(),
         total: payload.total,
     };
+    let tenant = auth::tenant_do_usuario(&claims);
     let o_clone = o.clone();
-    let result = tokio::task::spawn_blocking(move || servicos::criar_orcamento(&o_clone)).await;
+    let result =
+        tokio::task::spawn_blocking(move || servicos::criar_orcamento(tenant, &o_clone)).await;
     match result {
         Ok(Ok(id)) => {
             let mut saved = o;
@@ -810,10 +967,12 @@ async fn handler_criar_orcamento(
 }
 
 async fn handler_obter_orcamento(
-    _claims: Claims,
+    claims: Claims,
     Path(id): Path<u32>,
 ) -> Result<AxJson<Orcamento>, (StatusCode, AxJson<ErroApi>)> {
-    let result = tokio::task::spawn_blocking(move || servicos::obter_orcamento(id)).await;
+    check_perm(&claims, "orcamento.view")?;
+    let tenant = auth::tenant_do_usuario(&claims);
+    let result = tokio::task::spawn_blocking(move || servicos::obter_orcamento(tenant, id)).await;
     match result {
         Ok(Ok(o)) => Ok(AxJson(Orcamento {
             id: o.id,

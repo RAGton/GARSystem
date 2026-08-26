@@ -1,4 +1,5 @@
 use crate::aplicacao::AppEvent;
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use crate::servicos::Cliente;
 use eframe::egui;
 use std::collections::HashMap;
@@ -10,10 +11,17 @@ struct ResumoClienteResponse {
     credito_disponivel: f64,
 }
 
+/// Estado da lista paginada de clientes.
 #[derive(Clone)]
 enum EstadoListaClientes {
     Carregando,
-    Sucesso(Vec<Cliente>),
+    /// Sucesso — contém a página atual + lista de clientes.
+    Sucesso {
+        lista: Vec<Cliente>,
+        pagina_atual: u32,
+        total_paginas: u32,
+        total_registros: u64,
+    },
     Erro(String),
 }
 
@@ -26,17 +34,27 @@ enum EstadoResumoCliente {
 }
 
 pub struct TelaClientes {
-    endereco_servidor: Arc<Mutex<String>>,
+    base: BaseHandle,
+    token: TokenArc,
     clientes: Arc<Mutex<EstadoListaClientes>>,
+    /// Página atual (1-based). Persiste entre atualizações.
+    pagina_atual: u32,
+    /// Itens por página.
+    page_size: u32,
     selecionado: Option<u32>,
     resumos: Arc<Mutex<HashMap<u32, EstadoResumoCliente>>>,
 }
 
+const DEFAULT_PAGE_SIZE: u32 = 50;
+
 impl TelaClientes {
-    pub fn new(endereco_servidor: Arc<Mutex<String>>) -> Self {
+    pub fn new(base: BaseHandle, token: TokenArc) -> Self {
         let instancia = Self {
-            endereco_servidor,
+            base,
+            token,
             clientes: Arc::new(Mutex::new(EstadoListaClientes::Carregando)),
+            pagina_atual: 1,
+            page_size: DEFAULT_PAGE_SIZE,
             selecionado: None,
             resumos: Arc::new(Mutex::new(HashMap::new())),
         };
@@ -45,65 +63,64 @@ impl TelaClientes {
     }
 
     fn disparar_carregamento_clientes(&self, ctx: Option<egui::Context>) {
-        let endereco = self.endereco_servidor.lock().unwrap().clone();
-        {
-            let mut guard = self.clientes.lock().unwrap();
-            *guard = EstadoListaClientes::Carregando;
-        }
-
+        *self.clientes.lock().unwrap() = EstadoListaClientes::Carregando;
+        let base = self.base.clone();
+        let token = self.token.clone();
         let clientes_clone = Arc::clone(&self.clientes);
+        let page = self.pagina_atual;
+        let limit = self.page_size;
+
         crate::executor::spawn(move || {
-            let url = format!("{}/clientes", endereco);
-            let client = crate::http_client::get_client();
-            let response = client.get(&url).send();
-
-            let mut guard = clientes_clone.lock().unwrap();
-            *guard = match response {
-                Ok(resp) => match resp.json::<Vec<Cliente>>() {
-                    Ok(lista) => EstadoListaClientes::Sucesso(lista),
-                    Err(e) => EstadoListaClientes::Erro(format!(
-                        "Falha ao processar resposta /clientes: {}",
-                        e
-                    )),
-                },
-                Err(e) => EstadoListaClientes::Erro(format!("Falha ao consultar {}: {}", url, e)),
+            let res = gui_services::listar_clientes_paginado(&base, &token, page, limit);
+            *clientes_clone.lock().unwrap() = match res {
+                Ok(pagina) => {
+                    // Decodifica items como Vec<Cliente>
+                    let lista: Vec<Cliente> =
+                        serde_json::from_value(serde_json::Value::Array(pagina.items))
+                            .unwrap_or_default();
+                    EstadoListaClientes::Sucesso {
+                        lista,
+                        pagina_atual: pagina.page,
+                        total_paginas: pagina.total_paginas,
+                        total_registros: pagina.total,
+                    }
+                }
+                Err(e) => EstadoListaClientes::Erro(e.mensagem),
             };
-
             if let Some(ctx) = ctx {
                 ctx.request_repaint();
             }
         });
     }
 
-    fn disparar_resumo_cliente(&self, id: u32, ctx: egui::Context) {
-        let endereco = self.endereco_servidor.lock().unwrap().clone();
-        {
-            let mut guard = self.resumos.lock().unwrap();
-            guard.insert(id, EstadoResumoCliente::Carregando);
+    fn ir_para_pagina(&mut self, page: u32, ctx: egui::Context) {
+        if page < 1 {
+            return;
         }
+        self.pagina_atual = page;
+        self.disparar_carregamento_clientes(Some(ctx));
+    }
 
+    fn disparar_resumo_cliente(&self, id: u32, ctx: egui::Context) {
+        self.resumos
+            .lock()
+            .unwrap()
+            .insert(id, EstadoResumoCliente::Carregando);
+        let base = self.base.clone();
+        let token = self.token.clone();
         let resumos_clone = Arc::clone(&self.resumos);
-        crate::executor::spawn(move || {
-            let url = format!("{}/clientes/{}/resumo", endereco, id);
-            let client = crate::http_client::get_client();
-            let resposta = client.get(&url).send();
 
-            let mut guard = resumos_clone.lock().unwrap();
-            guard.insert(
+        crate::executor::spawn(move || {
+            let res: Result<ResumoClienteResponse, ErroServico> =
+                gui_services::resumo_cliente(&base, &token, id);
+            resumos_clone.lock().unwrap().insert(
                 id,
-                match resposta {
-                    Ok(resp) => match resp.json::<ResumoClienteResponse>() {
-                        Ok(r) => EstadoResumoCliente::Sucesso {
-                            gastos: r.gastos_totais,
-                            credito: r.credito_disponivel,
-                        },
-                        Err(e) => {
-                            EstadoResumoCliente::Erro(format!("Erro ao interpretar resumo: {}", e))
-                        }
+                match res {
+                    Ok(r) => EstadoResumoCliente::Sucesso {
+                        gastos: r.gastos_totais,
+                        credito: r.credito_disponivel,
                     },
-                    Err(e) => {
-                        EstadoResumoCliente::Erro(format!("Erro de conexão com {}: {}", url, e))
-                    }
+                    Err(e) => EstadoResumoCliente::Erro(e.mensagem),
                 },
             );
             ctx.request_repaint();
@@ -145,10 +162,34 @@ impl TelaClientes {
                         }
                         return None;
                     }
-                    EstadoListaClientes::Sucesso(lista) => {
+                    EstadoListaClientes::Sucesso {
+                        lista,
+                        pagina_atual,
+                        total_paginas,
+                        total_registros,
+                    } => {
+                        // Controles de paginação
+                        ui.horizontal(|ui| {
+                            ui.add_enabled_ui(pagina_atual > 1, |ui| {
+                                if ui.button("← Anterior").clicked() {
+                                    self.ir_para_pagina(pagina_atual - 1, ctx.clone());
+                                }
+                            });
+                            ui.label(format!(
+                                "Página {} de {} ({} clientes no total)",
+                                pagina_atual, total_paginas, total_registros
+                            ));
+                            ui.add_enabled_ui(pagina_atual < total_paginas, |ui| {
+                                if ui.button("Próxima →").clicked() {
+                                    self.ir_para_pagina(pagina_atual + 1, ctx.clone());
+                                }
+                            });
+                        });
+                        ui.separator();
+
                         ui.horizontal(|ui| {
                             ui.vertical(|ui| {
-                                ui.label("Lista de clientes:");
+                                ui.label(format!("Lista de clientes (página {}):", pagina_atual));
                                 for c in &lista {
                                     if ui
                                         .selectable_label(self.selecionado == Some(c.id), &c.nome)

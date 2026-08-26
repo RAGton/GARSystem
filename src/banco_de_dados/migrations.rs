@@ -30,8 +30,8 @@
 
 use super::conexao::obter_conexao;
 use crate::servicos::ErroAplicacao;
-use mysql::prelude::Queryable;
 use mysql::params;
+use mysql::prelude::Queryable;
 
 const SCHEMA_MIGRATIONS_TABLE: &str = "schema_migrations";
 
@@ -45,6 +45,62 @@ const MIGRATIONS: &[(&str, &str)] = &[
     (
         "0002_movimentacoes_clientes",
         include_str!("../../db-init/migrations/0002_movimentacoes_clientes.sql"),
+    ),
+    (
+        "0003_audit_log",
+        include_str!("../../db-init/migrations/0003_audit_log.sql"),
+    ),
+    (
+        "0004_crm",
+        include_str!("../../db-init/migrations/0004_crm.sql"),
+    ),
+    (
+        "0005_equipamentos_expand",
+        include_str!("../../db-init/migrations/0005_equipamentos_expand.sql"),
+    ),
+    (
+        "0006_quote_order",
+        include_str!("../../db-init/migrations/0006_quote_order.sql"),
+    ),
+    (
+        "0007_files",
+        include_str!("../../db-init/migrations/0007_files.sql"),
+    ),
+    (
+        "0008_os_mobile",
+        include_str!("../../db-init/migrations/0008_os_mobile.sql"),
+    ),
+    (
+        "0009_operations",
+        include_str!("../../db-init/migrations/0009_operations.sql"),
+    ),
+    (
+        "0010_financial",
+        include_str!("../../db-init/migrations/0010_financial.sql"),
+    ),
+    (
+        "0011_empresa_rbac",
+        include_str!("../../db-init/migrations/0011_empresa_rbac.sql"),
+    ),
+    (
+        "0012_tenant_id",
+        include_str!("../../db-init/migrations/0012_tenant_id.sql"),
+    ),
+    (
+        "0013_unique_constraints_per_empresa",
+        include_str!("../../db-init/migrations/0013_unique_constraints_per_empresa.sql"),
+    ),
+    (
+        "0014_indexes_performance",
+        include_str!("../../db-init/migrations/0014_indexes_performance.sql"),
+    ),
+    (
+        "0015_tenant_performance_indexes",
+        include_str!("../../db-init/migrations/0015_tenant_performance_indexes.sql"),
+    ),
+    (
+        "0016_financeiro_tenant_id",
+        include_str!("../../db-init/migrations/0016_financeiro_tenant_id.sql"),
     ),
 ];
 
@@ -124,9 +180,15 @@ pub fn aplicar_migrations() -> Result<(), ErroAplicacao> {
     }
 
     if total_aplicadas == 0 {
-        tracing::info!("✅ Migrations em dia ({} aplicadas anteriormente)", aplicadas.len());
+        tracing::info!(
+            "✅ Migrations em dia ({} aplicadas anteriormente)",
+            aplicadas.len()
+        );
     } else {
-        tracing::info!("✅ {} migration(s) aplicada(s) com sucesso", total_aplicadas);
+        tracing::info!(
+            "✅ {} migration(s) aplicada(s) com sucesso",
+            total_aplicadas
+        );
     }
     Ok(())
 }

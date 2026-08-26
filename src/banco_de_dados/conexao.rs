@@ -48,7 +48,7 @@ pub fn inicializar_pool() -> Result<(), ErroAplicacao> {
 // A função que fornece uma conexão para os outros submódulos (`init.rs`, `usuario.rs`).
 // Se o pool ainda não foi inicializado, tentamos inicializá-lo de forma preguiçosa
 // e retornamos um erro claro em caso de falha, em vez de panic.
-pub(super) fn obter_conexao() -> Result<PooledConn, ErroAplicacao> {
+pub fn obter_conexao() -> Result<PooledConn, ErroAplicacao> {
     let mut guard = POOL_DB.lock().unwrap();
     if guard.is_none() {
         // tentativa de inicialização preguiçosa
@@ -72,9 +72,7 @@ pub(super) fn obter_conexao() -> Result<PooledConn, ErroAplicacao> {
 /// Faz um `SELECT 1` simples para confirmar a conexão de fato funciona.
 pub fn ping_banco() -> Result<(), ErroAplicacao> {
     let mut conn = obter_conexao()?;
-    let one: Option<i32> = conn
-        .query_first("SELECT 1")
-        .map_err(ErroAplicacao::from)?;
+    let one: Option<i32> = conn.query_first("SELECT 1").map_err(ErroAplicacao::from)?;
     if one == Some(1) {
         Ok(())
     } else {

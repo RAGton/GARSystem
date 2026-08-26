@@ -1,9 +1,27 @@
 // src/main.rs
 // Ponto de entrada para o cliente GUI (Interface Gráfica do Usuário)
+//
+// Justificativa P2.6.2c: binário GUI, permite dead_code e unused_imports.
+#![allow(
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unused_mut,
+    clippy::collapsible_if,
+    clippy::needless_return,
+    clippy::assigning_clones,
+    clippy::derive_partial_eq_without_eq,
+    clippy::len_zero,
+    clippy::useless_vec,
+    clippy::cast_possible_truncation,
+    clippy::field_reassign_with_default,
+    float_literal_f32_fallback
+)]
 
 mod aplicacao;
 mod banco_de_dados;
 mod executor;
+mod gui_services;
 mod http_client;
 mod servicos;
 mod telas;

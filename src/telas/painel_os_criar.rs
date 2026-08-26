@@ -1,6 +1,7 @@
 // src/telas/painel_os_criar.rs
 
 use crate::aplicacao::AppEvent;
+use crate::gui_services::{self, BaseHandle, ErroServico, TokenArc};
 use crate::servicos::{InfoUsuario, OrdemServico, Peca, PecaOS, SituacaoOS, StatusOS};
 use eframe::egui;
 use std::sync::{Arc, Mutex};
@@ -21,7 +22,8 @@ enum EstadoListaTecnicos {
 }
 
 pub struct TelaCriarOs {
-    endereco_servidor: Arc<Mutex<String>>,
+    base: BaseHandle,
+    token: TokenArc,
     os_data: OrdemServico,
     usuario_logado: Option<String>,
     estado_pecas: Arc<Mutex<EstadoListaPecas>>,
@@ -31,17 +33,16 @@ pub struct TelaCriarOs {
     salvando: Arc<Mutex<bool>>,
     resultado_salvar: Arc<Mutex<Option<Result<u32, String>>>>,
     erro_ultimo: Option<String>,
-    // novos campos para modais e busca
     mostrar_modal_tecnicos: bool,
     estado_tecnicos: Arc<Mutex<EstadoListaTecnicos>>,
     filtro_tecnico: String,
     mostrar_modal_pecas: bool,
     filtro_peca_modal: String,
-    tipo_adicao: u8, // 0 = Requisição, 1 = Orçamento
+    tipo_adicao: u8,
 }
 
 impl TelaCriarOs {
-    pub fn new(endereco_servidor: Arc<Mutex<String>>, usuario_logado: Option<String>) -> Self {
+    pub fn new(base: BaseHandle, token: TokenArc, usuario_logado: Option<String>) -> Self {
         let mut os_inicial = OrdemServico {
             id: 0,
             cliente: String::new(),
@@ -69,7 +70,8 @@ impl TelaCriarOs {
         }
 
         let instancia = Self {
-            endereco_servidor,
+            base,
+            token,
             os_data: os_inicial,
             usuario_logado,
             estado_pecas: Arc::new(Mutex::new(EstadoListaPecas::Carregando)),
@@ -91,55 +93,40 @@ impl TelaCriarOs {
     }
 
     fn disparar_carregamento_pecas(&self, ctx: Option<egui::Context>) {
-        let endereco = self.endereco_servidor.lock().unwrap().clone();
         {
             let mut estado = self.estado_pecas.lock().unwrap();
             *estado = EstadoListaPecas::Carregando;
         }
 
         let estado_clone = Arc::clone(&self.estado_pecas);
+        let base = self.base.clone();
+        let token = self.token.clone();
         crate::executor::spawn(move || {
-            let url = format!("{}/estoque/pecas", endereco);
-            let client = crate::http_client::get_client();
-            let resultado = client.get(&url).send();
-            let mut estado = estado_clone.lock().unwrap();
-            *estado = match resultado {
-                Ok(resp) => match resp.json::<Vec<Peca>>() {
-                    Ok(lista) => EstadoListaPecas::Pronto(lista),
-                    Err(e) => {
-                        EstadoListaPecas::Erro(format!("Erro ao interpretar lista de peças: {}", e))
-                    }
-                },
-                Err(e) => EstadoListaPecas::Erro(format!("Erro ao consultar {}: {}", url, e)),
+            let res: Result<Vec<Peca>, ErroServico> = gui_services::listar_pecas(&base, &token);
+            *estado_clone.lock().unwrap() = match res {
+                Ok(lista) => EstadoListaPecas::Pronto(lista),
+                Err(e) => EstadoListaPecas::Erro(e.mensagem),
             };
-            if let Some(ctx) = ctx {
-                ctx.request_repaint();
+            if let Some(c) = ctx {
+                c.request_repaint();
             }
         });
     }
 
     fn disparar_carregamento_tecnicos(&self, ctx: egui::Context) {
-        let endereco = self.endereco_servidor.lock().unwrap().clone();
         {
             let mut estado = self.estado_tecnicos.lock().unwrap();
             *estado = EstadoListaTecnicos::Carregando;
         }
-
         let estado_clone = Arc::clone(&self.estado_tecnicos);
+        let base = self.base.clone();
+        let token = self.token.clone();
         crate::executor::spawn(move || {
-            let url = format!("{}/usuarios", endereco);
-            let client = crate::http_client::get_client();
-            let resultado = client.get(&url).send();
-            let mut estado = estado_clone.lock().unwrap();
-            *estado = match resultado {
-                Ok(resp) => match resp.json::<Vec<InfoUsuario>>() {
-                    Ok(lista) => EstadoListaTecnicos::Pronto(lista),
-                    Err(e) => EstadoListaTecnicos::Erro(format!(
-                        "Erro ao interpretar lista de usuários: {}",
-                        e
-                    )),
-                },
-                Err(e) => EstadoListaTecnicos::Erro(format!("Erro ao consultar {}: {}", url, e)),
+            let res: Result<Vec<InfoUsuario>, ErroServico> =
+                gui_services::listar_usuarios(&base, &token);
+            *estado_clone.lock().unwrap() = match res {
+                Ok(lista) => EstadoListaTecnicos::Pronto(lista),
+                Err(e) => EstadoListaTecnicos::Erro(e.mensagem),
             };
             ctx.request_repaint();
         });
@@ -418,35 +405,24 @@ impl TelaCriarOs {
             {
                 *self.salvando.lock().unwrap() = true;
                 self.erro_ultimo = None;
-                let os_para_enviar = self.os_data.clone();
-                let usuario = self.usuario_logado.clone();
-                let endereco = self.endereco_servidor.lock().unwrap().clone();
+                let mut payload = self.os_data.clone();
+                if payload.atendente.is_empty() {
+                    if let Some(nome) = &self.usuario_logado {
+                        payload.atendente = nome.clone();
+                    }
+                }
+                let base = self.base.clone();
+                let token = self.token.clone();
                 let salvando_flag = Arc::clone(&self.salvando);
                 let resultado = Arc::clone(&self.resultado_salvar);
                 let ctx_clone = ctx.clone();
                 crate::executor::spawn(move || {
-                    let client = crate::http_client::get_client();
-                    let url = format!("{}/ordens", endereco);
-                    let mut payload = os_para_enviar;
-                    if payload.atendente.is_empty() {
-                        if let Some(nome) = usuario {
-                            payload.atendente = nome;
-                        }
-                    }
-                    let res = client.post(&url).json(&payload).send();
-
-                    let resultado_final = match res {
-                        Ok(resp) => match resp.json::<OrdemServico>() {
-                            Ok(os_criada) => Ok(os_criada.id),
-                            Err(e) => Err(format!(
-                                "Erro ao interpretar resposta da criação da OS: {}",
-                                e
-                            )),
-                        },
-                        Err(e) => Err(format!("Falha ao criar OS: {}", e)),
-                    };
-
-                    *resultado.lock().unwrap() = Some(resultado_final);
+                    let res: Result<OrdemServico, ErroServico> =
+                        gui_services::criar_ordem(&base, &token, &payload);
+                    *resultado.lock().unwrap() = Some(match res {
+                        Ok(os) => Ok(os.id),
+                        Err(e) => Err(e.mensagem),
+                    });
                     *salvando_flag.lock().unwrap() = false;
                     ctx_clone.request_repaint();
                 });

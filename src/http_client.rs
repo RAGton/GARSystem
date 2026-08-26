@@ -45,10 +45,7 @@ fn apply_auth(builder: RequestBuilder, token: Option<&str>) -> RequestBuilder {
 }
 
 /// GET autenticado.
-pub fn get_autenticado<T: DeserializeOwned>(
-    url: &str,
-    token: Option<&str>,
-) -> Result<T, ErroHttp> {
+pub fn get_autenticado<T: DeserializeOwned>(url: &str, token: Option<&str>) -> Result<T, ErroHttp> {
     let req = apply_auth(get_client().get(url), token);
     let resp = req.send().map_err(ErroHttp::Rede)?;
     parse(resp)
