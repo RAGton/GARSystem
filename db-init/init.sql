@@ -28,22 +28,4 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     descricao   VARCHAR(255)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- ----------------------------------------------------------------------------
--- Aplica as migrations que ainda não foram aplicadas.
--- Em ambiente Docker, o entrypoint executa este arquivo todo .sql em ordem.
--- Aqui aplicamos manualmente via SOURCE para garantir a ordem.
--- ----------------------------------------------------------------------------
 
--- 0001: schema inicial (tabelas principais, sem duplicações, com índices)
-SET @m = '0001_initial_schema';
-INSERT IGNORE INTO schema_migrations (versao, descricao)
-VALUES (@m, 'Schema inicial limpo: tabelas principais, índices em FKs');
-
--- 0002: campos que faltavam
-SET @m = '0002_movimentacoes_clientes';
-INSERT IGNORE INTO schema_migrations (versao, descricao)
-VALUES (@m, 'Tabela movimentacoes, coluna credito, tenant_id');
-
--- (Migrations 0001 e 0002 são idempotentes — CREATE TABLE IF NOT EXISTS —
---  então rodá-las aqui é seguro mesmo se o volume persistir e o entrypoint
---  rodar este arquivo novamente. O `schema_migrations` evita re-registro.)

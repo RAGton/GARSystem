@@ -50,30 +50,21 @@ DEALLOCATE PREPARE stmt;
 -- ----------------------------------------------------------------------------
 -- 3. Coluna `tenant_id` (preparação multi-tenant)
 -- ----------------------------------------------------------------------------
--- Adiciona em tabelas que ainda não têm. Idempotente.
-DROP PROCEDURE IF EXISTS add_tenant_column_if_missing;
-DELIMITER //
-CREATE PROCEDURE add_tenant_column_if_missing(
-    IN p_table VARCHAR(64)
-)
-BEGIN
-    IF NOT EXISTS (
-        SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS
-        WHERE TABLE_SCHEMA = DATABASE()
-          AND TABLE_NAME = p_table
-          AND COLUMN_NAME = 'tenant_id'
-    ) THEN
-        SET @sql = CONCAT('ALTER TABLE ', p_table,
-                          ' ADD COLUMN tenant_id INT NOT NULL DEFAULT 0 AFTER id');
-        PREPARE s FROM @sql;
-        EXECUTE s;
-        DEALLOCATE PREPARE s;
-    END IF;
-END //
-DELIMITER ;
+SET @col_users = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'users' AND COLUMN_NAME = 'tenant_id');
+SET @sql_users = IF(@col_users = 0, "ALTER TABLE users ADD COLUMN tenant_id INT NOT NULL DEFAULT 0 AFTER id", "SELECT 'users tenant_id ok'");
+PREPARE stmt_u FROM @sql_users;
+EXECUTE stmt_u;
+DEALLOCATE PREPARE stmt_u;
 
-CALL add_tenant_column_if_missing('users');
-CALL add_tenant_column_if_missing('clientes');
-CALL add_tenant_column_if_missing('ordens_servico');
+SET @col_clientes = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'clientes' AND COLUMN_NAME = 'tenant_id');
+SET @sql_clientes = IF(@col_clientes = 0, "ALTER TABLE clientes ADD COLUMN tenant_id INT NOT NULL DEFAULT 0 AFTER id", "SELECT 'clientes tenant_id ok'");
+PREPARE stmt_c FROM @sql_clientes;
+EXECUTE stmt_c;
+DEALLOCATE PREPARE stmt_c;
 
-DROP PROCEDURE add_tenant_column_if_missing;
+SET @col_os = (SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'ordens_servico' AND COLUMN_NAME = 'tenant_id');
+SET @sql_os = IF(@col_os = 0, "ALTER TABLE ordens_servico ADD COLUMN tenant_id INT NOT NULL DEFAULT 0 AFTER id", "SELECT 'os tenant_id ok'");
+PREPARE stmt_os FROM @sql_os;
+EXECUTE stmt_os;
+DEALLOCATE PREPARE stmt_os;
+

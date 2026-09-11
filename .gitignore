@@ -70,3 +70,16 @@ backups/
 secrets/
 .mavis/
 examples/
+
+db_data/
+
+
+# Builds and dependencies in subdirectories
+target/
+**/target/
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+db_data/
+**/db_data/

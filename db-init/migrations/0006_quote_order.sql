@@ -115,7 +115,7 @@ ALTER TABLE orcamentos ADD COLUMN decidido_em TIMESTAMP NULL;
 ALTER TABLE orcamentos ADD COLUMN decisao_observacao TEXT;
 ALTER TABLE orcamentos ADD COLUMN updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP;
 
-CREATE INDEX idx_orcamentos_status ON orcamentos(status, created_at DESC);
+CREATE INDEX idx_orcamentos_status ON orcamentos(status, data_criacao DESC);
 CREATE INDEX idx_orcamentos_cotacao ON orcamentos(cotacao_origem_id);
 
 -- ----------------------------------------------------------------------------

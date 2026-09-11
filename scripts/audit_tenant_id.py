@@ -26,7 +26,8 @@ def main():
         'os_checklist_template_itens', 'os_checklist_templates', 'os_checklists', 'os_evolucoes',
         'pecas', 'plano_contas', 'servicos', 'sla_calculos', 'sla_config', 'sla_eventos',
         'transcricoes', 'workflow_definicoes', 'workflow_estados', 'workflow_movimentacoes',
-        'workflow_transicoes',
+        'workflow_transicoes', 'user_preferences', 'login_audit', 'tenant_branding',
+        'dashboard_layouts', 'workspace_preferences',
     }
 
     stats = {'SELECT': [0, 0], 'UPDATE': [0, 0], 'DELETE': [0, 0], 'INSERT': [0, 0]}

@@ -1,0 +1,955 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GARSystem API",
+    "version": "1.9.0",
+    "description": "API REST do Senior System / GARSystem. \n\n**Segurança**: todas as rotas, exceto `/login`, `/livez`, `/readyz`, `/`, exigem `Authorization: Bearer <jwt>`. Em release, `JWT_SECRET` é obrigatório (≥32 bytes). O servidor também seta um cookie `HttpOnly; Secure; SameSite=Strict` chamado `token` para suportar o navegador (BFF pattern).\n\n**Multi-tenant**: todo endpoint protegido recebe `tenant_id` da claim JWT (`claims.tenant`), com fallback para `TENANT_LEGACY (=1)` quando ausente. Todo INSERT/SELECT filtra por `tenant_id` (defense in depth, P2.6.2a).\n\n**RBAC granular (P2.6.2a)**: cada endpoint declara uma `permission`. SUPER_ADMIN bypassa; permissions são strings com wildcard (`financeiro.*` cobre `financeiro.conta_receber.pagar`).\n\n**Erros**: padronizados em `{ \"error\": { \"code\": \"NOT_FOUND\", \"message\": \"...\", \"request_id\": \"uuid\" } }`. Códigos: `AUTH_REQUIRED | AUTH_INVALID | FORBIDDEN | NOT_FOUND | VALIDATION | CONFLICT | RATE_LIMITED | INTERNAL`.\n\n**Paginação** (quando aplicável): response `Pagina<T>` = `{ items, page, limit, total, total_paginas }`. Query: `?page=N&limit=M` (defaults 1/50, max 200).",
+    "contact": {
+      "name": "Gabriel Rocha",
+      "url": "https://github.com/GARhq"
+    }
+  },
+  "servers": [
+    {
+      "url": "http://localhost:3000",
+      "description": "Dev local (default SERVER_PORT=3000)"
+    },
+    {
+      "url": "http://localhost:8080",
+      "description": "Docker compose (port mapping 8080:8080)"
+    }
+  ],
+  "tags": [
+    { "name": "Auth", "description": "Login, sessão, health" },
+    { "name": "Usuários", "description": "Admin de usuários e papéis (RBAC)" },
+    { "name": "Clientes", "description": "CRM básico + resumo financeiro" },
+    { "name": "Ordens de Serviço", "description": "OS — listar, criar, atualizar" },
+    { "name": "Serviços", "description": "Catálogo de serviços (vinculados a OS)" },
+    { "name": "Estoque", "description": "Peças, fornecedores" },
+    { "name": "Orçamentos", "description": "Orçamentos com itens" }
+  ],
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT",
+        "description": "Token JWT (claim `sub` = username, `uid` = id numérico, `papel` = PapelUsuario, `tenant` = 0..N, `roles` = [string], `permissions` = [string]). Lê-se do header `Authorization: Bearer <token>` OU do cookie HttpOnly `token`."
+      }
+    },
+    "schemas": {
+      "ErroApi": {
+        "type": "object",
+        "required": ["error"],
+        "properties": {
+          "error": {
+            "type": "object",
+            "required": ["code", "message"],
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "AUTH_REQUIRED",
+                  "AUTH_INVALID",
+                  "FORBIDDEN",
+                  "NOT_FOUND",
+                  "VALIDATION",
+                  "CONFLICT",
+                  "RATE_LIMITED",
+                  "INTERNAL"
+                ]
+              },
+              "message": { "type": "string" },
+              "request_id": { "type": "string", "format": "uuid" }
+            }
+          }
+        }
+      },
+      "PapelUsuario": {
+        "type": "string",
+        "enum": ["Administrador", "Gerencia", "Tecnico", "Financeiro", "Comercial", "Estoquista"]
+      },
+      "StatusOS": {
+        "type": "string",
+        "enum": [
+          "Aberta",
+          "Orcamento",
+          "Aprovada",
+          "EmAndamento",
+          "AguardandoPeca",
+          "Finalizada",
+          "Cancelada"
+        ]
+      },
+      "SituacaoOS": {
+        "type": "string",
+        "enum": [
+          "Orcamento",
+          "Aprovado",
+          "EmAndamento",
+          "AutorizadoAguardandoPeca",
+          "ServicoConcluido",
+          "AguardandoAutorizacao",
+          "AguardandoRetirada",
+          "Reprovado",
+          "AguardandoFaturar",
+          "Faturado"
+        ]
+      },
+      "LoginPayload": {
+        "type": "object",
+        "required": ["usuario", "senha"],
+        "properties": {
+          "usuario": { "type": "string", "minLength": 1 },
+          "senha": { "type": "string", "minLength": 1 }
+        }
+      },
+      "LoginResponse": {
+        "type": "object",
+        "required": ["papel", "expira_em"],
+        "properties": {
+          "token": { "type": "string", "description": "Sempre vazio no body — JWT vem no cookie HttpOnly `token`. Campo mantido por compat." },
+          "papel": { "$ref": "#/components/schemas/PapelUsuario" },
+          "expira_em": { "type": "integer", "format": "int64", "description": "Epoch (segundos) em que o token expira." }
+        }
+      },
+      "MeResponse": {
+        "type": "object",
+        "description": "Payload pós-login lido do cookie HttpOnly + claims JWT — NÃO existe endpoint HTTP hoje; construir no front a partir de `GET /login/me` (a criar) ou do payload do login.",
+        "required": ["uid", "username", "papel", "tenant", "permissions", "expira_em"],
+        "properties": {
+          "uid": { "type": "integer" },
+          "username": { "type": "string" },
+          "papel": { "$ref": "#/components/schemas/PapelUsuario" },
+          "tenant": { "type": "integer" },
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "permissions": { "type": "array", "items": { "type": "string" } },
+          "expira_em": { "type": "integer", "format": "int64" }
+        }
+      },
+      "InfoUsuario": {
+        "type": "object",
+        "required": ["id", "nome_usuario"],
+        "properties": {
+          "id": { "type": "integer" },
+          "nome_usuario": { "type": "string" }
+        }
+      },
+      "CriarUsuarioPayload": {
+        "type": "object",
+        "required": ["nome_usuario", "senha"],
+        "properties": {
+          "nome_usuario": { "type": "string", "minLength": 1 },
+          "senha": { "type": "string", "minLength": 8 }
+        }
+      },
+      "AlterarPapelPayload": {
+        "type": "object",
+        "required": ["novo_papel"],
+        "properties": {
+          "novo_papel": { "$ref": "#/components/schemas/PapelUsuario" }
+        }
+      },
+      "Cliente": {
+        "type": "object",
+        "required": ["id", "nome", "email", "telefone", "credito_disponivel"],
+        "properties": {
+          "id": { "type": "integer", "format": "int64" },
+          "nome": { "type": "string" },
+          "email": { "type": "string" },
+          "telefone": { "type": "string" },
+          "endereco": { "type": "string", "nullable": true },
+          "inscricao_estadual": { "type": "string", "nullable": true },
+          "cpf_cnpj": { "type": "string", "nullable": true },
+          "credito_disponivel": { "type": "number", "format": "double" }
+        }
+      },
+      "ClientePayload": {
+        "type": "object",
+        "required": ["nome", "email", "telefone"],
+        "properties": {
+          "nome": { "type": "string" },
+          "email": { "type": "string" },
+          "telefone": { "type": "string" },
+          "endereco": { "type": "string", "nullable": true },
+          "cpf_cnpj": { "type": "string", "nullable": true }
+        }
+      },
+      "ResumoClienteResponse": {
+        "type": "object",
+        "required": ["gastos_totais", "credito_disponivel"],
+        "properties": {
+          "gastos_totais": { "type": "number", "format": "double" },
+          "credito_disponivel": { "type": "number", "format": "double" }
+        }
+      },
+      "Peca": {
+        "type": "object",
+        "required": [
+          "id", "nome", "codigo_interno", "part_number", "descricao",
+          "fabricante", "localizacao", "estoque_atual", "estoque_minimo",
+          "preco_custo", "preco_venda"
+        ],
+        "properties": {
+          "id": { "type": "integer" },
+          "nome": { "type": "string", "description": "Alias do `descricao` no DB." },
+          "codigo_interno": { "type": "string" },
+          "part_number": { "type": "string" },
+          "descricao": { "type": "string" },
+          "fabricante": { "type": "string" },
+          "localizacao": { "type": "string" },
+          "estoque_atual": { "type": "integer" },
+          "estoque_minimo": { "type": "integer" },
+          "preco_custo": { "type": "number", "format": "double" },
+          "preco_venda": { "type": "number", "format": "double" }
+        }
+      },
+      "Servico": {
+        "type": "object",
+        "required": ["id", "nome", "descricao", "preco"],
+        "properties": {
+          "id": { "type": "integer" },
+          "nome": { "type": "string" },
+          "descricao": { "type": "string" },
+          "preco": { "type": "number", "format": "double" }
+        }
+      },
+      "PecaOS": {
+        "type": "object",
+        "required": ["id_peca", "codigo_interno", "descricao", "quantidade", "preco_venda_unitario", "preco_total"],
+        "properties": {
+          "id_peca": { "type": "integer" },
+          "codigo_interno": { "type": "string" },
+          "descricao": { "type": "string" },
+          "quantidade": { "type": "integer" },
+          "preco_venda_unitario": { "type": "number", "format": "double" },
+          "preco_total": { "type": "number", "format": "double" }
+        }
+      },
+      "ServicoOS": {
+        "type": "object",
+        "required": ["id_servico", "nome", "descricao", "quantidade", "preco_unitario", "preco_total"],
+        "properties": {
+          "id_servico": { "type": "integer" },
+          "nome": { "type": "string" },
+          "descricao": { "type": "string" },
+          "quantidade": { "type": "integer" },
+          "preco_unitario": { "type": "number", "format": "double" },
+          "preco_total": { "type": "number", "format": "double" }
+        }
+      },
+      "HistoricoEdicao": {
+        "type": "object",
+        "required": ["usuario", "data_hora", "campo_alterado", "valor_antigo", "valor_novo"],
+        "properties": {
+          "usuario": { "type": "string" },
+          "data_hora": { "type": "string" },
+          "campo_alterado": { "type": "string" },
+          "valor_antigo": { "type": "string" },
+          "valor_novo": { "type": "string" }
+        }
+      },
+      "OrdemServico": {
+        "type": "object",
+        "required": [
+          "id", "cliente", "equipamento", "defeito_relatado", "status", "parecer_tecnico",
+          "situacao", "numero_serie_equipamento", "observacoes", "nome_tecnico_responsavel",
+          "atendente", "horario_abertura", "telefone_cliente", "data_chegada", "prazo_entrega",
+          "historico_edicoes", "pecas", "total_pecas", "servicos", "total_servicos"
+        ],
+        "properties": {
+          "id": { "type": "integer" },
+          "cliente": { "type": "string" },
+          "equipamento": { "type": "string" },
+          "defeito_relatado": { "type": "string" },
+          "status": { "$ref": "#/components/schemas/StatusOS" },
+          "parecer_tecnico": { "type": "string" },
+          "situacao": { "$ref": "#/components/schemas/SituacaoOS" },
+          "numero_serie_equipamento": { "type": "string" },
+          "observacoes": { "type": "string" },
+          "nome_tecnico_responsavel": { "type": "string" },
+          "atendente": { "type": "string" },
+          "horario_abertura": { "type": "string" },
+          "telefone_cliente": { "type": "string" },
+          "data_chegada": { "type": "string" },
+          "prazo_entrega": { "type": "string" },
+          "historico_edicoes": { "type": "array", "items": { "$ref": "#/components/schemas/HistoricoEdicao" } },
+          "pecas": { "type": "array", "items": { "$ref": "#/components/schemas/PecaOS" } },
+          "total_pecas": { "type": "number", "format": "double" },
+          "servicos": { "type": "array", "items": { "$ref": "#/components/schemas/ServicoOS" } },
+          "total_servicos": { "type": "number", "format": "double" }
+        }
+      },
+      "AtualizarOrdemPayload": {
+        "type": "object",
+        "required": ["os", "usuario"],
+        "properties": {
+          "os": { "$ref": "#/components/schemas/OrdemServico" },
+          "usuario": { "type": "string" }
+        }
+      },
+      "OrcamentoItem": {
+        "type": "object",
+        "required": ["descricao", "quantidade", "preco_unitario", "preco_total"],
+        "properties": {
+          "descricao": { "type": "string" },
+          "quantidade": { "type": "integer", "minimum": 1 },
+          "preco_unitario": { "type": "number", "format": "double" },
+          "preco_total": { "type": "number", "format": "double" }
+        }
+      },
+      "Orcamento": {
+        "type": "object",
+        "required": ["id", "cliente_id", "items", "total"],
+        "properties": {
+          "id": { "type": "integer" },
+          "cliente_id": { "type": "integer" },
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/OrcamentoItem" } },
+          "total": { "type": "number", "format": "double" }
+        }
+      },
+      "PaginaOrcamento": {
+        "type": "object",
+        "required": ["items", "page", "limit", "total", "total_paginas"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/Orcamento" } },
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "total": { "type": "integer", "format": "int64" },
+          "total_paginas": { "type": "integer" }
+        }
+      },
+      "PaginaCliente": {
+        "type": "object",
+        "required": ["items", "page", "limit", "total", "total_paginas"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/Cliente" } },
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "total": { "type": "integer", "format": "int64" },
+          "total_paginas": { "type": "integer" }
+        }
+      },
+      "PaginaOrdemServico": {
+        "type": "object",
+        "required": ["items", "page", "limit", "total", "total_paginas"],
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/OrdemServico" } },
+          "page": { "type": "integer" },
+          "limit": { "type": "integer" },
+          "total": { "type": "integer", "format": "int64" },
+          "total_paginas": { "type": "integer" }
+        }
+      },
+      "HealthStatus": {
+        "type": "object",
+        "required": ["status"],
+        "properties": {
+          "status": { "type": "string", "enum": ["alive", "ready", "ok", "not_ready"] },
+          "database": { "type": "string", "enum": ["connected", "disconnected", "timeout"] }
+        }
+      }
+    }
+  },
+  "security": [{ "bearerAuth": [] }],
+  "paths": {
+    "/": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Ping público",
+        "security": [],
+        "responses": {
+          "200": { "description": "Texto simples confirmando que o servidor está no ar." }
+        }
+      }
+    },
+    "/livez": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Liveness probe (sem dependência externa)",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Processo vivo",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthStatus" },
+                "example": { "status": "alive" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Readiness probe (testa SELECT 1 no DB)",
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Servidor pronto, DB conectado",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthStatus" },
+                "example": { "status": "ready", "database": "connected" }
+              }
+            }
+          },
+          "503": {
+            "description": "DB indisponível ou timeout",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/HealthStatus" },
+                "example": { "status": "not_ready", "database": "disconnected" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/login": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Login de usuário (público, com rate limit por IP)",
+        "description": "Retorna JWT no cookie HttpOnly `token` (Secure, SameSite=Strict). Body pode vir vazio para compat, mas recomenda-se confiar no cookie. **Rate limit**: `RateLimiter::default()` (janela 60s, key=`login:{ip}`).",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/LoginPayload" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login OK. **Set-Cookie**: `token=<jwt>; HttpOnly; Secure; SameSite=Strict; Path=/; Max-Age=86400`",
+            "headers": {
+              "Set-Cookie": {
+                "schema": { "type": "string" },
+                "description": "Cookie HttpOnly com o JWT"
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/LoginResponse" }
+              }
+            }
+          },
+          "400": { "description": "Usuário/senha vazios (VALIDATION)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } },
+          "401": { "description": "Credenciais inválidas — mesma resposta para usuário inexistente e senha errada (anti-enumeração)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } },
+          "429": { "description": "Rate limit excedido", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } }
+        }
+      }
+    },
+    "/healthz": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Healthcheck detalhado (protegido, testa DB)",
+        "responses": {
+          "200": { "description": "OK + DB conectado", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/HealthStatus" } } } },
+          "401": { "description": "AUTH_REQUIRED ou AUTH_INVALID", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } },
+          "500": { "description": "DB indisponível", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } }
+        }
+      }
+    },
+    "/usuarios": {
+      "get": {
+        "tags": ["Usuários"],
+        "summary": "Lista usuários (tenant-aware)",
+        "description": "Permissão: `empresa.usuario.list`. Retorna todos os usuários com `id` e `nome_usuario`.",
+        "responses": {
+          "200": {
+            "description": "Lista de usuários",
+            "content": {
+              "application/json": {
+                "schema": { "type": "array", "items": { "$ref": "#/components/schemas/InfoUsuario" } }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "description": "Sem `empresa.usuario.list`", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } }
+        }
+      },
+      "post": {
+        "tags": ["Usuários"],
+        "summary": "Cria usuário SEM papel (mass assignment fechado)",
+        "description": "Permissão: `empresa.usuario.create`. Senha deve ter ≥8 caracteres. **Papel default = Comercial**. Para promover, use `PUT /usuarios/{username}/papel`.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/CriarUsuarioPayload" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Usuário criado" },
+          "400": { "description": "Senha < 8 chars ou campos vazios (VALIDATION)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" },
+          "409": { "description": "Usuário já existe (CONFLICT)", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } }
+        }
+      }
+    },
+    "/usuarios/{username}/papel": {
+      "put": {
+        "tags": ["Usuários"],
+        "summary": "Altera papel de um usuário (somente Administrador)",
+        "description": "Permissão: `empresa.usuario.assign_role` + papel do JWT = `Administrador`. **[D3] IMPLEMENTADO 2026-09-07.** Proteções: (1) bloqueia rebaixamento do último Administrador (lockout prevention); (2) username `admin` é imutável (`NaoPodeRemoverAdmin`); (3) audit + log estruturados. Chama `servicos::alterar_papel` -> `banco_de_dados::usuario::alterar_papel` (`UPDATE users SET role = ? WHERE username = ?`).",
+        "parameters": [
+          { "name": "username", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AlterarPapelPayload" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "Papel alterado" },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "description": "Sem permissão OU tentando rebaixar o último admin", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } },
+          "404": { "description": "Usuário não encontrado", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } }
+        }
+      }
+    },
+    "/clientes": {
+      "get": {
+        "tags": ["Clientes"],
+        "summary": "Lista clientes do tenant",
+        "description": "Permissão: `crm.cliente.view`. **Hoje retorna `Vec<Cliente>` puro sem paginação** — ver `x-paginacao-planejada` para refatoração.",
+        "responses": {
+          "200": {
+            "description": "Lista de clientes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Cliente" }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      },
+      "post": {
+        "tags": ["Clientes"],
+        "summary": "Cria/atualiza cliente (upsert)",
+        "description": "Permissão: `crm.cliente.create`. Se `id` vier no payload, atualiza; senão cria. **Hoje o DTO `ClientePayload` não tem `id`** — sempre cria.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/ClientePayload" }
+            }
+          }
+        },
+        "responses": {
+          "201": { "description": "Cliente criado" },
+          "400": { "$ref": "#/components/schemas/ErroApi" },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      }
+    },
+    "/clientes/{id}/resumo": {
+      "get": {
+        "tags": ["Clientes"],
+        "summary": "Resumo financeiro do cliente (gastos + crédito)",
+        "description": "Permissão: `crm.cliente.view`.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resumo",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ResumoClienteResponse" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      }
+    },
+    "/estoque/pecas": {
+      "get": {
+        "tags": ["Estoque"],
+        "summary": "Lista peças de estoque do tenant",
+        "description": "Permissão: `estoque.peca.view`. Sem paginação hoje. `estoque_atual <= estoque_minimo` = peça crítica (usado pra alerta de estoque mínimo).",
+        "responses": {
+          "200": {
+            "description": "Lista de peças",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Peca" }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      }
+    },
+    "/servicos": {
+      "get": {
+        "tags": ["Serviços"],
+        "summary": "Lista catálogo de serviços do tenant",
+        "description": "Permissão: `os.view`. Retornado pelo módulo `banco_de_dados::servico`.",
+        "responses": {
+          "200": {
+            "description": "Lista de serviços",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/Servico" }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      },
+      "post": {
+        "tags": ["Serviços"],
+        "summary": "Cria serviço",
+        "description": "Permissão: `os.edit`. Devolve o serviço com `id` preenchido.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Servico" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Serviço criado",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Servico" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      }
+    },
+    "/ordens": {
+      "get": {
+        "tags": ["Ordens de Serviço"],
+        "summary": "Lista OS do tenant",
+        "description": "Permissão: `os.view`. **Sem paginação hoje**.",
+        "responses": {
+          "200": {
+            "description": "Lista de OS",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": { "$ref": "#/components/schemas/OrdemServico" }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      },
+      "post": {
+        "tags": ["Ordens de Serviço"],
+        "summary": "Cria OS",
+        "description": "Permissão: `os.create`. Devolve a OS persistida (re-buscada por id).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/OrdemServico" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "OS criada",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OrdemServico" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      }
+    },
+    "/ordens/{id}": {
+      "get": {
+        "tags": ["Ordens de Serviço"],
+        "summary": "Busca OS por id",
+        "description": "Permissão: `os.view`. 404 quando não existe no tenant.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "OS",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OrdemServico" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" },
+          "404": { "description": "OS não encontrada neste tenant", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } }
+        }
+      },
+      "put": {
+        "tags": ["Ordens de Serviço"],
+        "summary": "Atualiza OS",
+        "description": "Permissão: `os.edit`. Validação: `id` da URL deve bater com `payload.os.id`.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/AtualizarOrdemPayload" }
+            }
+          }
+        },
+        "responses": {
+          "200": { "description": "OS atualizada" },
+          "400": { "description": "ID URL ≠ ID body", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      }
+    },
+    "/orcamentos": {
+      "get": {
+        "tags": ["Orçamentos"],
+        "summary": "Lista orçamentos do tenant (paginado)",
+        "description": "Permissão: `orcamento.view`. Query: `?page=N&limit=M` (defaults 1/50, max 200). Retorna `Pagina<Orcamento>` (items, page, limit, total, total_paginas). Ordenação padrão: `data_criacao DESC, id DESC`. **[D4] IMPLEMENTADO 2026-09-07.**",
+        "parameters": [
+          { "name": "page", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "default": 1 } },
+          { "name": "limit", "in": "query", "required": false, "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Página de orçamentos",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/PaginaOrcamento" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      },
+      "post": {
+        "tags": ["Orçamentos"],
+        "summary": "Cria orçamento com itens",
+        "description": "Permissão: `orcamento.create`. Devolve o orçamento persistido.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": { "$ref": "#/components/schemas/Orcamento" }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Orçamento criado",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Orcamento" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      }
+    },
+    "/orcamentos/{id}": {
+      "get": {
+        "tags": ["Orçamentos"],
+        "summary": "Busca orçamento por id",
+        "description": "Permissão: `orcamento.view`. 404 quando não existe.",
+        "parameters": [
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "integer" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Orçamento",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Orcamento" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/schemas/ErroApi" },
+          "403": { "$ref": "#/components/schemas/ErroApi" },
+          "404": { "$ref": "#/components/schemas/ErroApi" }
+        }
+      }
+    },
+    "/logout": {
+      "post": {
+        "tags": ["Auth"],
+        "summary": "Logout (revoga JWT)",
+        "description": "[D1] **IMPLEMENTADO 2026-09-07.** Requer `Bearer` válido ou cookie `token`. Adiciona o JWT à blacklist in-memory (`Mutex<HashMap<token, exp>>`) até `exp`. Limpa o cookie `token` (`Max-Age=0`). Sessões futuras com este token retornam `401 AUTH_INVALID`. **Limitação**: in-memory single-pod; multi-pod precisa Redis.",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "204": { "description": "Logout OK; cookie limpo" },
+          "401": { "description": "AUTH_REQUIRED ou AUTH_INVALID", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } }
+        }
+      }
+    },
+    "/me": {
+      "get": {
+        "tags": ["Auth"],
+        "summary": "Claims do usuário logado",
+        "description": "[D2] **IMPLEMENTADO 2026-09-07.** Lê o JWT (Bearer ou cookie HttpOnly `token`) e devolve o payload decodificado (sem expor o token cru). Use para reconstruir o estado de auth no front em F5 sem persistir JWT no localStorage.",
+        "responses": {
+          "200": {
+            "description": "Claims do usuário",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/MeResponse" }
+              }
+            }
+          },
+          "401": { "description": "Sem cookie ou cookie expirado/inválido", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErroApi" } } } }
+        }
+      }
+    }
+  },
+  "x-endpoints-planejados": {
+    "description": "Funcionalidades que existem nos módulos Rust (crm, operations, financial, rbac, arquivos, transcription, storage) mas AINDA NÃO TÊM handlers HTTP registrados em `server.rs`. Precisam ser adicionadas antes de o front consumir dados reais dessas áreas. TODOS devem seguir o padrão `{ items: T[], page, limit, total, total_paginas }` quando listagem.",
+    "grupo": [
+      {
+        "modulo": "crm",
+        "endpoints": [
+          "GET /crm/clientes/{id}/timeline?limite=50 — `DashboardCliente` agregado",
+          "POST /crm/clientes/{id}/observacoes — `crm.cliente.create`",
+          "GET /crm/clientes/{id}/observacoes — `crm.cliente.view`",
+          "PUT /crm/clientes/{id}/observacoes/{obsId} — `crm.cliente.edit`",
+          "GET /crm/tags — `crm.tag.view`",
+          "POST /crm/clientes/{id}/tags/{tagId}",
+          "DELETE /crm/clientes/{id}/tags/{tagId}",
+          "GET /crm/clientes/{id}/contatos — `crm.cliente.view`",
+          "POST /crm/clientes/{id}/contatos",
+          "GET /crm/clientes/{id}/equipamentos",
+          "POST /crm/clientes/{id}/equipamentos"
+        ],
+        "schemas_existem": ["TimelineEvento", "Observacao", "Tag", "Contato", "Equipamento", "DashboardCliente"]
+      },
+      {
+        "modulo": "operations",
+        "endpoints": [
+          "GET /os/kanban?status=...&tecnico=... — `KanbanColuna[]` agrupado por estado",
+          "POST /os/{id}/mover-estado { novo_estado: StatusOS, motivo?: string } — dispara transições do workflow",
+          "GET /agenda?de=YYYY-MM-DD&ate=YYYY-MM-DD — `EventoAgenda[]`",
+          "POST /agenda — criar evento",
+          "GET /agenda/{id}",
+          "DELETE /agenda/{id}",
+          "GET /sla/os/{id} — `SlaCalculo` (tempo total, em_atraso, sla_estourado)",
+          "GET /dashboard/executivo — KPIs OS (abertas, atrasadas, finalizadas no período)",
+          "GET /alertas?severidade=critica&entidade=os — `AlertaOcorrencia[]`"
+        ],
+        "schemas_existem": ["WorkflowDefinicao", "WorkflowEstado", "WorkflowTransicao", "WorkflowStatus", "KanbanColuna", "KanbanCard", "EventoAgenda", "Agenda", "SlaCalculo", "SlaConfig", "AlertaOcorrencia", "DashboardExecutivo"]
+      },
+      {
+        "modulo": "financial",
+        "endpoints": [
+          "GET /financeiro/dashboard — `DashboardFinanceiro` (recebido_no_mes, a_receber, atrasado, fluxo_caixa_resumo)",
+          "GET /financeiro/contas-receber?status=aberta|paga|cancelada&page=N&limit=M — `ContaReceber[]` paginado",
+          "POST /financeiro/contas-receber — criar",
+          "GET /financeiro/contas-pagar?status=... — `ContaPagar[]` paginado",
+          "POST /financeiro/contas-pagar — criar",
+          "POST /financeiro/contas-receber/{id}/pagar { data, valor, conta_bancaria }",
+          "POST /financeiro/contas-pagar/{id}/pagar",
+          "GET /financeiro/fluxo-caixa?de=YYYY-MM-DD&ate=YYYY-MM-DD — `FluxoCaixaResultado`",
+          "GET /financeiro/alertas?severidade=critica",
+          "POST /financeiro/alertas/{id}/resolver",
+          "GET /financeiro/plano-contas — `PlanoConta[]`",
+          "GET /financeiro/centros-custo — `CentroCusto[]`"
+        ],
+        "schemas_existem": ["DashboardFinanceiro", "ContaReceber", "ContaPagar", "Lancamento", "FluxoCaixaResultado", "ResumoFluxo", "PlanoConta", "CentroCusto", "ConfiguracaoFinanceira", "AlertaFinanceiroOcorrencia"]
+      },
+      {
+        "modulo": "rbac",
+        "endpoints": [
+          "GET /rbac/roles — listar roles do tenant (RBAC dinâmico, separado do `PapelUsuario` legado)",
+          "GET /rbac/permissions — listar permissions disponíveis",
+          "POST /rbac/users/{uid}/roles — atribuir role (admin)",
+          "DELETE /rbac/users/{uid}/roles/{roleId} — remover role"
+        ]
+      },
+      {
+        "modulo": "estoque",
+        "endpoints": [
+          "POST /estoque/pecas — criar peça",
+          "PUT /estoque/pecas/{id} — atualizar (existe em `banco_de_dados::estoque::atualizar_peca` mas sem handler)",
+          "GET /estoque/fornecedores — listar",
+          "POST /estoque/fornecedores",
+          "GET /estoque/pecas/alerta-minimo — `Peca[]` filtrado `WHERE estoque_atual <= estoque_minimo`"
+        ]
+      },
+      {
+        "modulo": "usuarios",
+        "endpoints": [
+          "GET /usuarios/{username} — detalhes (papel, roles[], permissions[], created_at)",
+          "DELETE /usuarios/{username} — soft delete"
+        ]
+      },
+      {
+        "modulo": "global",
+        "endpoints": [
+          "PUT /auth/senha — troca de senha do próprio usuário (precisa `auth.password.change`)",
+          "POST /auth/senha/reset — admin reseta senha de outro usuário (precisa `auth.password.reset`)",
+          "DELETE /usuarios/{username} — soft delete (precisa `empresa.usuario.delete`)"
+        ]
+      }
+    ]
+  },
+  "x-convencoes": {
+    "versionamento_de_contrato": "OpenAPI 3.1 fica em /docs/openapi.json. Regerar quando DTOs Rust mudarem.",
+    "headers_obrigatorios_request": ["Authorization: Bearer <jwt> OU cookie `token` HttpOnly"],
+    "headers_opcionais_request": ["x-request-id — opcional, uuid; ecoado na resposta pra tracing"],
+    "formato_datas": "Datas como STRING (`'YYYY-MM-DDTHH:MM:SS.fffZ'` ou `DD/MM/YYYY HH:MM`) — DB decide. NÃO usar Date nativo sem migrar todas as datas pra UTC ISO.",
+    "paginação": "Adotar `Pagina<T>` = { items, page, limit, total, total_paginas } em todos os GET de listagem novos.",
+    "filtros_e_ordenação": "Query params: `?q=texto&page=N&limit=M&ordenar=campo&direcao=asc|desc`. Quando o handler não suportar, retornar `Vec<T>` simples sem query (status atual: clientes, ordens, pecas, serviços).",
+    "permissions": "Toda rota protegida declara `x-permission` no OpenAPI extension; o back usa `check_perm(claims, perm)` antes de processar. SUPER_ADMIN bypassa.",
+    "tenant_id": "Derivado do JWT. Nunca aceito via query/body. Multi-tenant nativo no DB (todas as tabelas têm coluna `tenant_id`). `tenant = 0` no token = fallback legacy = `1` real.",
+    "cookies_vs_bearer": "Front-ends navegador devem confiar no cookie HttpOnly (não acessível ao JS). Chamadas server-to-server usam `Authorization: Bearer`."
+  },
+  "x-paginas-frontend-que-precisam-dados-reais": {
+    "dashboard": ["/dashboard/executivo (operations)", "/financeiro/dashboard (financial)", "/alertas (operations+financial)"],
+    "clientes": ["GET /clientes", "GET /clientes/{id}/resumo", "GET /crm/clientes/{id}/timeline (PENDENTE)", "GET /crm/clientes/{id}/observacoes (PENDENTE)", "GET /crm/clientes/{id}/equipamentos (PENDENTE)"],
+    "os": ["GET /ordens", "GET /ordens/{id}", "POST /ordens", "PUT /ordens/{id}", "GET /os/kanban (PENDENTE)", "POST /os/{id}/mover-estado (PENDENTE)"],
+    "orcamentos": ["GET /orcamentos (PENDENTE — hoje só POST + GET por id)", "POST /orcamentos", "GET /orcamentos/{id}"],
+    "estoque": ["GET /estoque/pecas", "GET /estoque/pecas/alerta-minimo (PENDENTE)", "GET /estoque/fornecedores (PENDENTE)"],
+    "financeiro": ["GET /financeiro/dashboard (PENDENTE)", "GET /financeiro/contas-receber (PENDENTE)", "GET /financeiro/contas-pagar (PENDENTE)", "GET /financeiro/fluxo-caixa (PENDENTE)"],
+    "admin": ["GET /usuarios", "POST /usuarios", "PUT /usuarios/{u}/papel (STUB hoje — implementar servicos::alterar_papel)"]
+  }
+}

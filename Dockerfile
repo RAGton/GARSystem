@@ -2,7 +2,7 @@
 
 # ---- Estágio 1: Builder ----
 # [CORRIGIDO] Usamos a imagem `latest` para garantir uma versão recente do Cargo.
-FROM rust:latest AS builder
+FROM docker.io/library/rust:latest AS builder
 
 # Cria um diretório de trabalho dentro do contêiner
 WORKDIR /usr/src/app
@@ -10,15 +10,15 @@ WORKDIR /usr/src/app
 # Copia os arquivos do projeto para o contêiner
 COPY . .
 
-# Instala a dependência de build correta (libmariadb-dev)
-RUN apt-get update && apt-get install -y libmariadb-dev
+USER root
+RUN mkdir -p /var/lib/apt/lists/partial && apt-get update && apt-get install -y libmariadb-dev
 
 # Compila o servidor em modo de release para performance
 RUN cargo build --release --bin senior-system-server
 
 # ---- Estágio 2: Runner ----
 # Usamos uma imagem base Debian slim, que é muito menor que a imagem do Rust
-FROM debian:12-slim
+FROM docker.io/library/debian:12-slim
 
 # Instala apenas a dependência de tempo de execução correta
 RUN apt-get update && apt-get install -y libmariadb-dev && rm -rf /var/lib/apt/lists/*
