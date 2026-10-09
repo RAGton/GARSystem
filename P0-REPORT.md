@@ -1,4 +1,4 @@
-# P0-REPORT — Fundação Segura do Senior System
+# P0-REPORT — Fundação Segura do GAR System
 
 > **Sprint:** P0 (Segurança, Autenticação, Integridade de Dados)
 > **Data:** 2026-08-21
@@ -93,7 +93,7 @@
 - **Antes:** `garantir_admin()` criava `admin/admin` em todo startup.
 - **Depois:**
   - `init.rs` refatorado: **NÃO cria admin**. Apenas garante schema.
-  - Novo binário `senior-system-admin`:
+  - Novo binário `gar-system-admin`:
     - `check` — lista usuários existentes.
     - `create-admin --username <nome> --password-env <VAR>` (recomendado para prod).
     - `create-admin --username <nome> --password-stdin` (interativo).
@@ -131,13 +131,13 @@
 
 | # | Comando | Resultado |
 |---|---|---|
-| 1 | `cargo check --bin senior-system-server` | ✅ 24 warnings (dead-code) — sem erros |
-| 2 | `cargo check --bin senior-system-gui` | ✅ 58 warnings — sem erros |
-| 3 | `cargo check --bin senior-system-admin` | ✅ 0 warnings — sem erros |
+| 1 | `cargo check --bin gar-system-server` | ✅ 24 warnings (dead-code) — sem erros |
+| 2 | `cargo check --bin gar-system-gui` | ✅ 58 warnings — sem erros |
+| 3 | `cargo check --bin gar-system-admin` | ✅ 0 warnings — sem erros |
 | 4 | `cargo check --all-targets` | ✅ sem erros |
 | 5 | `cargo test` (todos) | ✅ **16 testes passam** (9 unit + 7 integration) |
-| 6 | `cargo clippy --bin senior-system-server` | ✅ 26 warnings (1 manual_contains sugestão) — sem erros |
-| 7 | `cargo build --release --bin senior-system-server` | ✅ Compila em 3min, sem erros |
+| 6 | `cargo clippy --bin gar-system-server` | ✅ 26 warnings (1 manual_contains sugestão) — sem erros |
+| 7 | `cargo build --release --bin gar-system-server` | ✅ Compila em 3min, sem erros |
 
 **Detalhe dos testes:**
 
@@ -173,11 +173,11 @@ Estes testes existem como TODO no código ou estão fora do escopo do sandbox:
 
 - ❌ **Testes de integração com MySQL real** (concorrência de OS, estoque no banco, migrations end-to-end). O sandbox não tem Docker/Podman/MySQL. **Como reproduzir:**
   1. Subir `podman-compose up` (sobe MySQL).
-  2. `cargo run --bin senior-system-server` (aplica migrations).
+  2. `cargo run --bin gar-system-server` (aplica migrations).
   3. Conectar via `mysql` cliente e validar `schema_migrations`.
   4. Criar duas threads que atualizam a mesma OS simultaneamente e verificar que o estoque final é o diff correto.
-- ❌ **Smoke test do binário `senior-system-admin`** — `cargo build --release` compila; execução requer MySQL.
-- ❌ **E2E da GUI** — não há display no sandbox. **Como reproduzir:** `cargo run --bin senior-system-gui` em desktop com X/Wayland.
+- ❌ **Smoke test do binário `gar-system-admin`** — `cargo build --release` compila; execução requer MySQL.
+- ❌ **E2E da GUI** — não há display no sandbox. **Como reproduzir:** `cargo run --bin gar-system-gui` em desktop com X/Wayland.
 - ❌ **cargo audit / dependências vulneráveis** — sandbox sem rede para crates.io após bootstrap. **Como reproduzir localmente:** `cargo install cargo-audit && cargo audit`.
 - ❌ **Teste do `.gitignore` real** — `git rm --cached .env` precisa ser feito pelo usuário.
 - ❌ **Execução do `git filter-repo`** — precisa ser feito pelo usuário para limpar histórico.
@@ -216,7 +216,7 @@ tests/estoque_diff.rs                      NOVO (7 testes de diff)
 ```
 
 ### Modificados (mas commit ainda não feito)
-- `Cargo.toml` — adicionou `uuid`, novo binário `senior-system-admin`.
+- `Cargo.toml` — adicionou `uuid`, novo binário `gar-system-admin`.
 
 ### Removidos do disco
 - `.env-exemple` (duplicado)
@@ -304,7 +304,7 @@ Do `AUDITORIA.md` §12 (P1 — antes do primeiro cliente pagante):
 
 **Se for preciso reverter as migrations no banco:**
 1. ⚠️ **ATENÇÃO**: rollback de migration deve ser planejado. Em geral, é mais seguro fazer backup antes e restaurar.
-2. Backup: `mysqldump senior_system > pre_rollback.sql`.
+2. Backup: `mysqldump gar_system > pre_rollback.sql`.
 3. Para `0001_initial_schema`: se o banco não tinha as tabelas antes, você pode dropar as tabelas manualmente. Se já tinha, **não dropar** — pode haver dados.
 4. Para `0002_movimentacoes_clientes`:
    - Se a coluna `credito` foi adicionada recentemente e tem dados: `ALTER TABLE clientes DROP COLUMN credito;` (cuidado, dados perdidos).

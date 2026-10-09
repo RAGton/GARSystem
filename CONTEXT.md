@@ -1,4 +1,4 @@
-# CONTEXT — Senior System
+# CONTEXT — GAR System
 
 > **Memória técnica** do projeto. Documenta decisões, arquitetura, regras de
 > negócio, dependências, e tudo que um novo dev (ou agente de IA) precisa
@@ -8,7 +8,7 @@
 
 ## 1. Visão
 
-O **Senior System** é um sistema de gestão cliente-servidor para uso interno
+O **GAR System** é um sistema de gestão cliente-servidor para uso interno
 em empresas de assistência técnica / manutenção. Cobre Ordens de Serviço,
 clientes, orçamento, peças, serviços, e dashboard.
 
@@ -123,7 +123,7 @@ A ambição é evoluir para **ERP + CRM + mobile**, mas o foco atual é
 ### ADR-008: Bootstrap admin via CLI separado
 - **Status:** Aceito (v1.9.0).
 - **Contexto:** Servidor auto-criava admin/admin no startup (P0 crítico).
-- **Decisão:** Binário `senior-system-admin` para criar o primeiro admin.
+- **Decisão:** Binário `gar-system-admin` para criar o primeiro admin.
   Senha via env (`--password-env`) ou stdin (sem eco).
 - **Consequência:** Sem senha default. Operador precisa provisionar.
 
@@ -228,11 +228,11 @@ cp .env.example .env
 # Editar .env (especialmente JWT_SECRET — gerar com `openssl rand -base64 64`)
 podman-compose up --build
 # Em outro terminal:
-cargo run --bin senior-system-gui
+cargo run --bin gar-system-gui
 # Criar primeiro admin:
-cargo run --bin senior-system-admin -- check
+cargo run --bin gar-system-admin -- check
 ADMIN_PASSWORD=$(openssl rand -base64 24) \
-  cargo run --bin senior-system-admin -- create-admin --username admin --password-env ADMIN_PASSWORD
+  cargo run --bin gar-system-admin -- create-admin --username admin --password-env ADMIN_PASSWORD
 ```
 
 ### Prod

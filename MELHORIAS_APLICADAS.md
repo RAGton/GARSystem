@@ -1,4 +1,4 @@
-# 🚀 Melhorias Aplicadas - Senior System Server
+# 🚀 Melhorias Aplicadas - GAR System Server
 
 ## ✅ Fase 1: Estabilidade e Performance (CONCLUÍDO)
 
@@ -90,7 +90,7 @@ Substituição de `println!/eprintln!` por sistema de logs profissional `tracing
 
 #### Exemplos de Logs:
 ```
-2025-10-13T10:30:45 INFO 🚀 Iniciando servidor Senior System...
+2025-10-13T10:30:45 INFO 🚀 Iniciando servidor GAR System...
 2025-10-13T10:30:46 INFO ✅ Pool do banco de dados inicializado com sucesso
 2025-10-13T10:30:46 INFO ✅ Serviços inicializados
 2025-10-13T10:30:46 INFO 🌐 Servidor escutando em 0.0.0.0:3000
@@ -105,7 +105,7 @@ No `.env`:
 RUST_LOG=info
 
 # Debug apenas do nosso módulo
-RUST_LOG=senior_system=debug,info
+RUST_LOG=gar_system=debug,info
 
 # Trace completo (desenvolvimento)
 RUST_LOG=trace
@@ -139,10 +139,10 @@ nano .env
 ### 2. Compilar e Rodar
 ```bash
 # Compilar servidor
-cargo build --bin senior-system-server --release
+cargo build --bin gar-system-server --release
 
 # Rodar servidor
-cargo run --bin senior-system-server
+cargo run --bin gar-system-server
 ```
 
 ### 3. Testar

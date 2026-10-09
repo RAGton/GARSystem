@@ -1,4 +1,4 @@
-# CHANGELOG — Senior System
+# CHANGELOG — GAR System
 
 Todas as mudanças notáveis neste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
@@ -9,7 +9,7 @@ e este projeto segue [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 ### ⚠️ Breaking Changes
 
 - **Senha padrão `admin/admin` removida.** O servidor não cria mais
-  automaticamente. Use `senior-system-admin create-admin` (CLI) para
+  automaticamente. Use `gar-system-admin create-admin` (CLI) para
   criar o primeiro administrador.
 - **`POST /usuarios` ignora `papel` no body.** Novos usuários sempre
   nascem com `Comercial`. Para promover, usar `PUT /usuarios/{username}/papel`
@@ -46,7 +46,7 @@ e este projeto segue [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 - 🗄️ **Coluna `tenant_id` em `users`, `clientes`, `ordens_servico`**
   (preparação multi-tenant).
 - 🗄️ **Índices em todas as FKs** e em colunas de `WHERE` mais frequentes.
-- 📦 **CLI `senior-system-admin`** para bootstrap seguro de admin.
+- 📦 **CLI `gar-system-admin`** para bootstrap seguro de admin.
 - 📦 **`.env.example` reescrito** com placeholders + comentários.
 - 📦 **`.gitignore` completo** — `.env*` ignorado, exceto `.env.example`.
 - 🧪 **16 testes** (6 auth + 3 rate limit + 7 estoque diff).
@@ -74,7 +74,7 @@ e este projeto segue [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 - 🗑️ `.env-exemple` (duplicado do `.env.example`).
 - 🗑️ `.directory` (artefato KDE, sem motivo no repo).
 - 🗑️ `src.lib` (arquivo vazio).
-- 🗑️ `garantir_admin()` — substituído pelo CLI `senior-system-admin`.
+- 🗑️ `garantir_admin()` — substituído pelo CLI `gar-system-admin`.
 - 🗑️ Senha hardcoded `admin` no `init.rs`.
 - 🗑️ Fallback inseguro de `JWT_SECRET`.
 

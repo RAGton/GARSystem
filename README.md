@@ -1,6 +1,6 @@
 -----
 
-# Documentação do Projeto: Senior System (v1.9.0 - Fundação Segura)
+# Documentação do Projeto: GAR System (v1.9.0 - Fundação Segura)
 
 ## 📌 Status & Documentação
 
@@ -19,15 +19,15 @@
 > 1. Leia `P0-REPORT.md` §6 (Riscos restantes) — há ações obrigatórias suas.
 > 2. Leia `CONTEXT.md` §9 (Deploy) — passos completos.
 > 3. **Rotacione `MYSQL_PASSWORD` e `JWT_SECRET`** antes do primeiro start.
-> 4. Crie o primeiro admin com `cargo run --bin senior-system-admin -- create-admin`.
+> 4. Crie o primeiro admin com `cargo run --bin gar-system-admin -- create-admin`.
 
 ---
 
-# Documentação do Projeto: Senior System (v1.5.0 - Arquitetura Cliente-Servidor)
+# Documentação do Projeto: GAR System (v1.5.0 - Arquitetura Cliente-Servidor)
 
 ## 1\. Visão Geral
 
-O **Senior System** é um sistema de gestão projetado com uma arquitetura moderna cliente-servidor, utilizando Rust tanto no backend quanto no frontend. A aplicação visa fornecer uma ferramenta de gestão interna robusta, segura e escalável, com múltiplos níveis de acesso baseados em papéis de usuário (Administrador, Gerencia, Tecnico, Financeiro, Comercial).
+O **GAR System** é um sistema de gestão projetado com uma arquitetura moderna cliente-servidor, utilizando Rust tanto no backend quanto no frontend. A aplicação visa fornecer uma ferramenta de gestão interna robusta, segura e escalável, com múltiplos níveis de acesso baseados em papéis de usuário (Administrador, Gerencia, Tecnico, Financeiro, Comercial).
 
 A arquitetura atual é composta por três componentes principais:
 
@@ -105,7 +105,7 @@ O projeto agora é executado em duas partes independentes: o ambiente de servido
 
     ```env
     # .env
-    MYSQL_DATABASE=senior_system
+    MYSQL_DATABASE=gar_system
     MYSQL_USER=rocha
     MYSQL_PASSWORD=200519
     MYSQL_ROOT_PASSWORD=root_strong_password
@@ -137,7 +137,7 @@ O projeto agora é executado em duas partes independentes: o ambiente de servido
     Enquanto o `podman-compose` estiver rodando, abra um novo terminal na raiz do projeto e execute:
 
     ```bash
-    cargo run --bin senior-system-gui
+    cargo run --bin gar-system-gui
     ```
 
     A interface gráfica será compilada e iniciada. Agora, ao fazer login, ela se comunicará com o servidor que está rodando no contêiner.

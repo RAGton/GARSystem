@@ -107,7 +107,7 @@ Comando: `cargo run --bin audit-rbac-achado1` (binário antigo)
 
 **Como reproduzir**:
 ```bash
-cd /workspace/SeniorSystem/.worktrees/p2.6.2a-hardening
+cd /workspace/GARSystem/.worktrees/p2.6.2a-hardening
 cargo run --bin audit-rbac-achado1
 ```
 
