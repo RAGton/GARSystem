@@ -10,7 +10,11 @@
 -- O que este arquivo faz:
 --   1. Cria o banco se não existir.
 --   2. Cria a tabela de controle de migrations (`schema_migrations`).
---   3. Aplica TODAS as migrations versionadas.
+--   3. Aplica TODAS as migrations versionadas via SOURCE, em ordem.
+--
+-- IMPORTANTE: este arquivo SÓ roda no primeiro start (volume vazio). As
+-- migrations são idempotentes (CREATE TABLE IF NOT EXISTS, INSERT IGNORE),
+-- então é seguro re-executar.
 --
 -- ⚠️ NÃO crie tabelas de negócio aqui. Use migrations.
 -- ============================================================================
@@ -26,24 +30,29 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
     versao      VARCHAR(32)  NOT NULL PRIMARY KEY,
     aplicada_em TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     descricao   VARCHAR(255)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci;
 
 -- ----------------------------------------------------------------------------
--- Aplica as migrations que ainda não foram aplicadas.
--- Em ambiente Docker, o entrypoint executa este arquivo todo .sql em ordem.
--- Aqui aplicamos manualmente via SOURCE para garantir a ordem.
+-- Aplica TODAS as migrations versionadas em ordem.
+-- SOURCE executa cada arquivo .sql dentro do contexto do mysql client.
+-- O compose monta ./db-init em /docker-entrypoint-initdb.d, então os
+-- arquivos em ./db-init/migrations/ ficam acessíveis via
+-- /docker-entrypoint-initdb.d/migrations/.
 -- ----------------------------------------------------------------------------
 
--- 0001: schema inicial (tabelas principais, sem duplicações, com índices)
-SET @m = '0001_initial_schema';
-INSERT IGNORE INTO schema_migrations (versao, descricao)
-VALUES (@m, 'Schema inicial limpo: tabelas principais, índices em FKs');
-
--- 0002: campos que faltavam
-SET @m = '0002_movimentacoes_clientes';
-INSERT IGNORE INTO schema_migrations (versao, descricao)
-VALUES (@m, 'Tabela movimentacoes, coluna credito, tenant_id');
-
--- (Migrations 0001 e 0002 são idempotentes — CREATE TABLE IF NOT EXISTS —
---  então rodá-las aqui é seguro mesmo se o volume persistir e o entrypoint
---  rodar este arquivo novamente. O `schema_migrations` evita re-registro.)
+SOURCE /docker-entrypoint-initdb.d/migrations/0001_initial_schema.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0002_movimentacoes_clientes.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0003_audit_log.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0004_crm.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0005_equipamentos_expand.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0006_quote_order.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0007_files.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0008_os_mobile.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0009_operations.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0010_financial.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0011_empresa_rbac.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0012_tenant_id.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0013_unique_constraints_per_empresa.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0014_indexes_performance.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0015_tenant_performance_indexes.sql;
+SOURCE /docker-entrypoint-initdb.d/migrations/0016_financeiro_tenant_id.sql;

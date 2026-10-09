@@ -17,3 +17,4 @@ pub mod painel_principal;
 pub mod painel_servicos;
 pub mod painel_tecnico;
 pub mod painel_tecnico_dashboard;
+pub mod theme;

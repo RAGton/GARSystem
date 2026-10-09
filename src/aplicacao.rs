@@ -1,6 +1,7 @@
 // src/aplicacao.rs
 
 use crate::servicos::PapelUsuario;
+use crate::telas::theme::cores as cores_tema;
 use crate::telas::{
     componentes::sidebar, configuracao::TelaConfiguracao, login::TelaLogin, painel_adm::TelaAdmin,
     painel_clientes::TelaClientes, painel_estoque::TelaEstoque, painel_financeiro::TelaFinanceiro,
@@ -82,14 +83,36 @@ pub struct AplicativoPrincipal {
 }
 
 fn definir_estilo_azul(ctx: &egui::Context, tema: Tema) {
+    // MVP 2026-10-09: usa o palette GAR (cyan/blue/silver/ink) em vez do azul antigo.
     let mut visuals = if tema == Tema::Escuro {
         egui::Visuals::dark()
     } else {
         egui::Visuals::light()
     };
-    let azul_destaque = egui::Color32::from_rgb(0, 120, 215);
-    visuals.widgets.active.bg_fill = azul_destaque;
-    visuals.selection.bg_fill = azul_destaque;
+    // Aplica tokens GAR (cyan/blue/silver/ink)
+    visuals.widgets.active.bg_fill = cores_tema::PRIMARY;
+    visuals.selection.bg_fill = cores_tema::PRIMARY;
+    visuals.hyperlink_color = cores_tema::PRIMARY;
+    visuals.override_text_color = Some(if tema == Tema::Escuro {
+        cores_tema::TEXT_PRIMARY
+    } else {
+        cores_tema::TEXT_PRIMARY // MVP: só dark mesmo
+    });
+    // Reforçar superfícies escuras pra não cair no default do egui
+    if tema == Tema::Escuro {
+        visuals.panel_fill = cores_tema::SURFACE;
+        visuals.window_fill = cores_tema::SURFACE;
+        visuals.faint_bg_color = cores_tema::SURFACE_ELEV;
+        visuals.extreme_bg_color = cores_tema::BG;
+        visuals.widgets.noninteractive.bg_fill = cores_tema::BG;
+        visuals.widgets.inactive.bg_fill = cores_tema::SURFACE_ELEV;
+        visuals.widgets.hovered.bg_fill = cores_tema::SURFACE_ELEV;
+        // Borders
+        visuals.widgets.noninteractive.bg_stroke.color = cores_tema::BORDER;
+        visuals.widgets.inactive.bg_stroke.color = cores_tema::BORDER;
+        visuals.widgets.hovered.bg_stroke.color = cores_tema::BORDER_FOCUS;
+        visuals.widgets.active.bg_stroke.color = cores_tema::BORDER_FOCUS;
+    }
     ctx.set_visuals(visuals);
 }
 
