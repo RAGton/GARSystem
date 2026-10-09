@@ -34,6 +34,7 @@ struct LoginResponse {
 }
 
 pub struct TelaLogin {
+    empresa: String,
     nome_usuario: String,
     senha: String,
     lembrar_usuario: bool,
@@ -53,6 +54,7 @@ impl TelaLogin {
         lembrar_usuario: bool,
     ) -> Self {
         Self {
+            empresa: String::new(),
             nome_usuario,
             senha: String::new(),
             lembrar_usuario,
@@ -179,12 +181,53 @@ impl TelaLogin {
                         // Versão fica só no footer do painel direito (com copyright)
                     },
                 );
+
+                // === BADGE DE LICENCIAMENTO (rodapé do painel esquerdo) ===
+                ui.with_layout(
+                    egui::Layout::bottom_up(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(SP_XXL);
+                        // Badge: ● Licenciado
+                        ui.horizontal(|ui| {
+                            ui.spacing_mut().item_spacing.x = 8.0;
+                            // Ponto verde (sucesso) ou cyan
+                            let dot = egui::Shape::circle_filled(
+                                ui.next_widget_position() + egui::vec2(6.0, 6.0),
+                                5.0,
+                                cores_tema::SUCCESS,
+                            );
+                            ui.painter().add(dot);
+                            ui.add_space(20.0);
+                            ui.label(
+                                egui::RichText::new("Licenciado")
+                                    .color(cores_tema::SUCCESS)
+                                    .size(tipografia::FONT_LABEL)
+                                    .strong(),
+                            );
+                        });
+                        ui.add_space(SP_SM);
+                        ui.label(
+                            egui::RichText::new("CNPJ 12.345.678/0001-90")
+                                .color(cores_tema::TEXT_MUTED)
+                                .size(tipografia::FONT_LABEL),
+                        );
+                    },
+                );
             });
         let _ = side_response; // silence unused
 
         // === PAINEL DIREITO: formulário ===
         egui::CentralPanel::default()
-            .frame(egui::Frame::default().fill(cores_tema::BG))
+            .frame(
+                egui::Frame::default()
+                    .fill(cores_tema::BG)
+                    .inner_margin(egui::Margin {
+                        left: SP_XXL as i8,
+                        right: SP_XXL as i8,
+                        top: SP_XXL as i8,
+                        bottom: 80, // reserva pro footer (60px + respiro)
+                    }),
+            )
             .show(ctx, |ui| {
                 // Botão de configuração (canto superior direito)
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
@@ -203,7 +246,7 @@ impl TelaLogin {
                         self.ir_para_configuracao = true;
                     }
                 });
-                ui.add_space(SP_XL);
+                ui.add_space(SP_SM);
 
                 // Container do form (centrado verticalmente)
                 ui.vertical_centered(|ui| {
@@ -211,7 +254,7 @@ impl TelaLogin {
                     // Centraliza vertical: usa min_height igual à área disponível
                     // e adiciona o form no centro
                     let total_h = ui.available_height() - 60.0; // reserva pro footer
-                    let top_pad = total_h * 0.18;
+                    let top_pad = total_h * 0.20;
                     ui.add_space(top_pad);
 
                     ui.label(
@@ -220,29 +263,93 @@ impl TelaLogin {
                             .size(tipografia::FONT_DISPLAY)
                             .strong(),
                     );
-                    ui.add_space(SP_SM);
+                    ui.add_space(SP_XS);
                     ui.label(
                         egui::RichText::new("Acesse sua conta para continuar")
                             .color(cores_tema::TEXT_SECONDARY)
                             .size(tipografia::FONT_BODY),
                     );
-                    ui.add_space(SP_XXL);
+                    ui.add_space(SP_XXL + SP_LG);
+
+                    // === DIVIDER SUTIL ===
+                    ui.add(egui::Separator::default().spacing(SP_SM));
+                    ui.add_space(SP_XL);
 
                     // === CAMPOS ===
                     ui.add_enabled_ui(!form_disabled, |ui| {
+                        // Empresa (multi-tenant: seleção de CNPJ)
+                        use crate::telas::login_empresas::{EMPRESAS_DEMO, EmpresaOpcao};
+                        ui.label(
+                            egui::RichText::new("Empresa")
+                                .color(cores_tema::TEXT_SECONDARY)
+                                .size(tipografia::FONT_LABEL)
+                                .strong(),
+                        );
+                        ui.add_space(SP_XS);
+                        // ComboBox com a lista de empresas demo.
+                        // Em produção, isso vira `egui::ComboBox::from_label` populado
+                        // por uma chamada ao backend (GET /tenants/active).
+                        let empresa_frame = egui::Frame::default()
+                            .fill(cores_tema::SURFACE_ELEV)
+                            .stroke(egui::Stroke::new(1.0, cores_tema::BORDER))
+                            .corner_radius(egui::CornerRadius::same(8))
+                            .inner_margin(egui::Margin::symmetric(SP_MD as i8, SP_XS as i8));
+                        empresa_frame.show(ui, |ui| {
+                            // Encontra o índice atual baseado no slug armazenado
+                            let selected_label: String = if self.empresa.is_empty() {
+                                "Selecione a empresa...".to_string()
+                            } else {
+                                EMPRESAS_DEMO
+                                    .iter()
+                                    .find(|e| e.slug == self.empresa)
+                                    .map(|e| format!("{} ({})", e.razao_social, e.cnpj))
+                                    .unwrap_or_else(|| self.empresa.clone())
+                            };
+                            egui::ComboBox::from_id_salt("empresa_select")
+                                .selected_text(selected_label)
+                                .height(SP_XL * 2.0)
+                                .show_ui(ui, |ui| {
+                                    for emp in EMPRESAS_DEMO.iter() {
+                                        let label = format!("{} — {}", emp.razao_social, emp.cnpj);
+                                        let response = ui.selectable_label(
+                                            self.empresa == emp.slug,
+                                            label,
+                                        );
+                                        if response.clicked() {
+                                            self.empresa = emp.slug.to_string();
+                                        }
+                                    }
+                                });
+                        });
+
+                        ui.add_space(SP_LG);
+
                         // Usuário
                         ui.label(
                             egui::RichText::new("Usuário")
                                 .color(cores_tema::TEXT_SECONDARY)
-                                .size(tipografia::FONT_LABEL),
+                                .size(tipografia::FONT_LABEL)
+                                .strong(),
                         );
                         ui.add_space(SP_XS);
-                        let user_resp = ui.add(
-                            egui::TextEdit::singleline(&mut self.nome_usuario)
-                                .hint_text("seu usuário")
-                                .desired_width(f32::INFINITY)
-                                .margin(egui::Margin::same(SP_MD as i8)),
-                        );
+                        let user_frame = egui::Frame::default()
+                            .fill(cores_tema::SURFACE_ELEV)
+                            .stroke(egui::Stroke::new(1.0, cores_tema::BORDER))
+                            .corner_radius(egui::CornerRadius::same(8))
+                            .inner_margin(egui::Margin::symmetric(SP_MD as i8, SP_LG as i8));
+                        let user_resp = user_frame.show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.nome_usuario)
+                                    .hint_text(
+                                        egui::RichText::new("seu usuário")
+                                            .color(cores_tema::TEXT_MUTED)
+                                            .size(tipografia::FONT_BODY),
+                                    )
+                                    .desired_width(f32::INFINITY)
+                                    .frame(false)
+                                    .text_color(cores_tema::TEXT_PRIMARY),
+                            )
+                        }).inner;
 
                         ui.add_space(SP_LG);
 
@@ -250,23 +357,36 @@ impl TelaLogin {
                         ui.label(
                             egui::RichText::new("Senha")
                                 .color(cores_tema::TEXT_SECONDARY)
-                                .size(tipografia::FONT_LABEL),
+                                .size(tipografia::FONT_LABEL)
+                                .strong(),
                         );
                         ui.add_space(SP_XS);
-                        let pass_resp = ui.add(
-                            egui::TextEdit::singleline(&mut self.senha)
-                                .password(true)
-                                .hint_text("••••••••")
-                                .desired_width(f32::INFINITY)
-                                .margin(egui::Margin::same(SP_MD as i8)),
-                        );
+                        let pass_frame = egui::Frame::default()
+                            .fill(cores_tema::SURFACE_ELEV)
+                            .stroke(egui::Stroke::new(1.0, cores_tema::BORDER))
+                            .corner_radius(egui::CornerRadius::same(8))
+                            .inner_margin(egui::Margin::symmetric(SP_MD as i8, SP_LG as i8));
+                        let pass_resp = pass_frame.show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.senha)
+                                    .password(true)
+                                    .hint_text(
+                                        egui::RichText::new("••••••••")
+                                            .color(cores_tema::TEXT_MUTED)
+                                            .size(tipografia::FONT_BODY),
+                                    )
+                                    .desired_width(f32::INFINITY)
+                                    .frame(false)
+                                    .text_color(cores_tema::TEXT_PRIMARY),
+                            )
+                        }).inner;
 
                         ui.add_space(SP_MD);
 
-                        // Lembrar de mim
+                        // Lembrar de mim (alinhado à esquerda, mesmo X dos campos)
                         let resp = ui.checkbox(
                             &mut self.lembrar_usuario,
-                            egui::RichText::new(" Lembrar de mim")
+                            egui::RichText::new("  Lembrar de mim")
                                 .color(cores_tema::TEXT_SECONDARY)
                                 .size(tipografia::FONT_BODY),
                         );
@@ -277,7 +397,7 @@ impl TelaLogin {
                             }
                         }
 
-                        // Tab nav
+                        // Tab nav (empresa → usuário via Enter ou Tab natural)
                         if user_resp.lost_focus()
                             && ui.input(|i| i.key_pressed(egui::Key::Enter))
                         {
@@ -291,15 +411,16 @@ impl TelaLogin {
 
                         ui.add_space(SP_XL);
 
-                        // === BOTÃO ENTRAR (primário, full width) ===
+                        // === BOTÃO ENTRAR (primário, full width, 56px) ===
                         let btn = egui::Button::new(
-                            egui::RichText::new("Entrar")
+                            egui::RichText::new("Entrar  →")
                                 .color(Color32::WHITE)
                                 .size(tipografia::FONT_SUBHEAD)
                                 .strong(),
                         )
                         .fill(cores_tema::PRIMARY)
-                        .min_size(egui::vec2(0.0, 44.0));
+                        .min_size(egui::vec2(0.0, 56.0))
+                        .corner_radius(egui::CornerRadius::same(10));
                         if ui.add(btn).clicked() {
                             self.iniciar_processo_login(ctx);
                         }
@@ -378,7 +499,7 @@ impl TelaLogin {
 
                 // === FOOTER ===
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
-                    ui.add_space(SP_XXL);
+                    ui.add_space(SP_XXL + SP_LG);
                     ui.horizontal(|ui| {
                         ui.label(
                             egui::RichText::new("© 2026 RAGton")
@@ -401,10 +522,10 @@ impl TelaLogin {
     }
 
     fn iniciar_processo_login(&mut self, ctx: &egui::Context) {
-        if self.nome_usuario.is_empty() || self.senha.is_empty() {
+        if self.empresa.is_empty() || self.nome_usuario.is_empty() || self.senha.is_empty() {
             *self.estado.lock().unwrap() = EstadoLogin::Falha {
                 titulo: "Campos Inválidos".to_string(),
-                mensagem: "Usuário e senha não podem estar vazios.".to_string(),
+                mensagem: "Empresa, usuário e senha não podem estar vazios.".to_string(),
             };
             return;
         }
@@ -412,6 +533,7 @@ impl TelaLogin {
         *self.estado.lock().unwrap() = EstadoLogin::EmProgresso;
 
         let estado_clone = self.estado.clone();
+        let empresa_clone = self.empresa.clone();
         let nome_usuario_clone = self.nome_usuario.clone();
         let senha_clone = self.senha.clone();
         let ctx_clone = ctx.clone();
@@ -422,6 +544,7 @@ impl TelaLogin {
         crate::executor::spawn(move || {
             let url = format!("{}/login", endereco_servidor);
             let body = serde_json::json!({
+                "empresa": empresa_clone,
                 "usuario": nome_usuario_clone,
                 "senha": senha_clone,
             });

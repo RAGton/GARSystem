@@ -68,15 +68,21 @@ pub fn mostrar(
 
     egui::SidePanel::left("sidebar")
         .resizable(true)
-        .default_width(200.0)
+        .default_width(220.0)
+        .frame(
+            egui::Frame::default()
+                .fill(crate::telas::theme::cores::BG)
+                .stroke(egui::Stroke::new(1.0, crate::telas::theme::cores::BORDER))
+                .inner_margin(egui::Margin::same(8)),
+        )
         .show_animated(ctx, sidebar_aberto, |ui| {
             // --- SEÇÃO SUPERIOR: LOGO E VERSÃO NO FINAL ---
             ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                ui.add_space(10.0);
+                ui.add_space(12.0);
                 if let Some(logo_texture) = logo {
                     ui.add(egui::Image::new(logo_texture).max_width(180.0));
                 }
-                ui.add_space(10.0);
+                ui.add_space(12.0);
             });
 
             ui.separator();
@@ -93,7 +99,7 @@ pub fn mostrar(
                             | PapelUsuario::Gerencia
                             | PapelUsuario::Comercial
                     ) {
-                        if ui.button("Dashboard").clicked() {
+                        if ui.button("📊 Dashboard").clicked() {
                             evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Dashboard));
                         }
                     }
@@ -117,7 +123,7 @@ pub fn mostrar(
                 // --- GRUPO DE MÓDULOS DE GESTÃO ---
                 ui.collapsing("💼 Módulos de Gestão", |ui| {
                     if permissoes.contains(&TelaAtiva::Admin)
-                        && ui.button("Administrativo").clicked()
+                        && ui.button("🛡️ Administrativo").clicked()
                     {
                         evento_emitido = Some(AppEvent::NavegarPara(TelaAtiva::Admin));
                     }
@@ -178,9 +184,9 @@ pub fn mostrar(
             // --- SEÇÃO INFERIOR: VERSÃO (fora da área de rolagem para ficar fixa) ---
             ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
                 ui.label(
-                    egui::RichText::new(format!("Versão: {}", env!("CARGO_PKG_VERSION")))
-                        .color(egui::Color32::GRAY)
-                        .size(12.0),
+                    egui::RichText::new(format!("v {}", env!("CARGO_PKG_VERSION")))
+                        .color(crate::telas::theme::cores::TEXT_MUTED)
+                        .size(11.0),
                 );
             });
         });

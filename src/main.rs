@@ -102,9 +102,10 @@ fn configurar_fontes(ctx: &egui::Context) {
 fn main() -> Result<(), eframe::Error> {
     let opcoes_janela = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([850.0, 500.0])
+            .with_inner_size([1200.0, 720.0])
+            .with_min_inner_size([960.0, 600.0])
             .with_resizable(true)
-            .with_title("GAR System - RAG"),
+            .with_title("GAR System"),
         centered: true,
         ..Default::default()
     };
