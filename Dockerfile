@@ -14,7 +14,7 @@ COPY . .
 RUN apt-get update && apt-get install -y libmariadb-dev
 
 # Compila o servidor em modo de release para performance
-RUN cargo build --release --bin senior-system-server
+RUN cargo build --release --bin gar-system-server
 
 # ---- Estágio 2: Runner ----
 # Usamos uma imagem base Debian slim, que é muito menor que a imagem do Rust
@@ -24,10 +24,10 @@ FROM debian:12-slim
 RUN apt-get update && apt-get install -y libmariadb-dev && rm -rf /var/lib/apt/lists/*
 
 # Copia APENAS o binário compilado do estágio de build para a imagem final
-COPY --from=builder /usr/src/app/target/release/senior-system-server /usr/local/bin/senior-system-server
+COPY --from=builder /usr/src/app/target/release/gar-system-server /usr/local/bin/gar-system-server
 
 # Expõe a porta 3000, onde nosso servidor Axum está rodando
 EXPOSE 3000
 
 # O comando que será executado quando o contêiner iniciar
-CMD ["senior-system-server"]
+CMD ["gar-system-server"]

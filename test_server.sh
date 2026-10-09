@@ -1,7 +1,7 @@
 #!/bin/bash
 # Script de teste para validar as melhorias do servidor
 
-echo "🧪 Testando melhorias do servidor Senior System"
+echo "🧪 Testando melhorias do servidor GAR System"
 echo "================================================"
 echo ""
 
@@ -36,6 +36,6 @@ echo "================================================"
 echo "✅ Testes concluídos!"
 echo ""
 echo "💡 Dicas:"
-echo "  - Inicie o servidor com: cargo run --bin senior-system-server"
+echo "  - Inicie o servidor com: cargo run --bin gar-system-server"
 echo "  - Configure JWT_SECRET no arquivo .env"
-echo "  - Veja logs detalhados com: RUST_LOG=debug cargo run --bin senior-system-server"
+echo "  - Veja logs detalhados com: RUST_LOG=debug cargo run --bin gar-system-server"

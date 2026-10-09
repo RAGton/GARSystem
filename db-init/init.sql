@@ -1,5 +1,5 @@
 -- ============================================================================
--- Bootstrap do banco Senior System
+-- Bootstrap do banco GAR System
 -- ----------------------------------------------------------------------------
 -- Este arquivo roda automaticamente na primeira inicialização do container
 -- MySQL (docker-entrypoint-initdb.d). Em reinicializações do container com
@@ -15,9 +15,9 @@
 -- ⚠️ NÃO crie tabelas de negócio aqui. Use migrations.
 -- ============================================================================
 
-CREATE DATABASE IF NOT EXISTS senior_system
+CREATE DATABASE IF NOT EXISTS gar_system
   CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-USE senior_system;
+USE gar_system;
 
 -- ----------------------------------------------------------------------------
 -- Controle de migrations
