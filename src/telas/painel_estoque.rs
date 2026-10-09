@@ -24,6 +24,7 @@ pub struct TelaEstoque {
     filtro_peca: String,
     peca_selecionada_edicao: Option<Peca>,
     mensagem: Option<(String, bool)>,
+    mostrar_form_nova_peca: bool,
 }
 
 impl TelaEstoque {
@@ -39,6 +40,7 @@ impl TelaEstoque {
             filtro_peca: String::new(),
             peca_selecionada_edicao: None,
             mensagem: None,
+            mostrar_form_nova_peca: false,
         };
 
         // Carrega a lista de peças via API autenticada (PAGINADA).
@@ -71,56 +73,72 @@ impl TelaEstoque {
 
     pub fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) -> Option<AppEvent> {
         egui::CentralPanel::default().show(ctx, |ui| {
-            ui.heading("Gestão de Estoque");
-            ui.separator();
-
             ui.horizontal(|ui| {
-                ui.selectable_value(&mut self.aba_ativa, AbaEstoque::Pecas, "📦 Peças");
-                ui.selectable_value(
-                    &mut self.aba_ativa,
-                    AbaEstoque::Fornecedores,
-                    "🚚 Fornecedores",
-                );
-                ui.selectable_value(
-                    &mut self.aba_ativa,
-                    AbaEstoque::EntradaNF,
-                    "📥 Entrada (NF)",
-                );
-                ui.selectable_value(
-                    &mut self.aba_ativa,
-                    AbaEstoque::Movimentacoes,
-                    "📋 Movimentações",
-                );
+                ui.vertical(|ui| {
+                    ui.heading(egui::RichText::new("Gestão de Estoque").size(25.0).strong());
+                    ui.label(egui::RichText::new("Peças, fornecedores e movimentações").color(ui.visuals().weak_text_color()));
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let total = self.lista_pecas.lock().map(|p| p.len()).unwrap_or(0);
+                    ui.label(egui::RichText::new(format!("{} itens carregados", total)).color(egui::Color32::from_rgb(150, 177, 203)));
+                });
             });
-
+            ui.add_space(12.0);
             ui.separator();
-
-            egui::ScrollArea::vertical().show(ui, |ui| match self.aba_ativa {
+            ui.add_space(6.0);
+            ui.horizontal_wrapped(|ui| {
+                for (aba, titulo) in [
+                    (AbaEstoque::Pecas, "Peças"),
+                    (AbaEstoque::Fornecedores, "Fornecedores"),
+                    (AbaEstoque::EntradaNF, "Entrada (NF)"),
+                    (AbaEstoque::Movimentacoes, "Movimentações"),
+                ] {
+                    let selecionada = self.aba_ativa == aba;
+                    let texto = if selecionada { egui::RichText::new(titulo).strong().color(egui::Color32::from_rgb(230, 246, 255)) } else { egui::RichText::new(titulo).color(ui.visuals().text_color()) };
+                    if ui.add_sized([ui.available_width().min(170.0).max(110.0), 34.0], egui::Button::new(texto).selected(selecionada)).clicked() { self.aba_ativa = aba; }
+                }
+            });
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(8.0);
+            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.aba_ativa {
                 AbaEstoque::Pecas => self.ui_pecas(ui),
                 AbaEstoque::Fornecedores => self.ui_fornecedores(ui),
-                AbaEstoque::EntradaNF => {
-                    ui.label("WIP: Tela de Entrada de Nota Fiscal");
-                }
-                AbaEstoque::Movimentacoes => {
-                    ui.label("WIP: Tela de Movimentações de Estoque");
-                }
+                AbaEstoque::EntradaNF => { ui.add_space(28.0); ui.vertical_centered(|ui| { ui.heading("Entrada de Nota Fiscal"); ui.add_space(8.0); ui.label("Este fluxo ainda não está implementado."); ui.label("Nenhum dado fictício é exibido."); }); }
+                AbaEstoque::Movimentacoes => { ui.add_space(28.0); ui.vertical_centered(|ui| { ui.heading("Movimentações de estoque"); ui.add_space(8.0); ui.label("O histórico de movimentações ainda não está disponível nesta interface."); ui.label("Nenhum dado fictício é exibido."); }); }
             });
         });
         None
     }
 
     fn ui_pecas(&mut self, ui: &mut egui::Ui) {
-        ui.collapsing("📝 Cadastrar Nova Peça", |ui| {
-            self.form_nova_peca(ui);
-        });
-        ui.separator();
-
         ui.horizontal(|ui| {
-            ui.label("🔎 Buscar Peça:");
-            ui.text_edit_singleline(&mut self.filtro_peca);
+            ui.vertical(|ui| {
+                ui.heading("Peças cadastradas");
+                ui.label(egui::RichText::new("Consulte e mantenha os itens do estoque.").color(ui.visuals().weak_text_color()));
+            });
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if ui.add(egui::Button::new(egui::RichText::new("＋ Nova peça").strong().color(egui::Color32::WHITE)).fill(egui::Color32::from_rgb(0, 112, 190)).min_size(egui::vec2(130.0, 36.0))).clicked() {
+                    self.form_peca = Peca::default(); self.mensagem = None; self.mostrar_form_nova_peca = !self.mostrar_form_nova_peca;
+                }
+            });
         });
-
-        self.tabela_pecas(ui);
+        if self.mostrar_form_nova_peca {
+            egui::Frame::group(ui.style()).inner_margin(egui::Margin::same(14)).show(ui, |ui| { ui.heading("Cadastrar peça"); ui.add_space(8.0); self.form_nova_peca(ui); });
+        }
+        if let Some((mensagem, sucesso)) = &self.mensagem {
+            let cor = if *sucesso { egui::Color32::from_rgb(91, 190, 140) } else { egui::Color32::from_rgb(255, 125, 125) };
+            ui.add_space(8.0); ui.label(egui::RichText::new(mensagem).color(cor));
+        }
+        ui.add_space(12.0);
+        egui::Frame::group(ui.style()).inner_margin(egui::Margin::same(12)).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("Buscar").strong());
+                ui.add_sized([ui.available_width().min(440.0), 34.0], egui::TextEdit::singleline(&mut self.filtro_peca).hint_text("Nome, descrição ou código interno…"));
+                if !self.filtro_peca.is_empty() && ui.button("Limpar").clicked() { self.filtro_peca.clear(); }
+            });
+            ui.add_space(8.0); self.tabela_pecas(ui);
+        });
 
         if let Some(mut peca_edicao) = self.peca_selecionada_edicao.clone() {
             let mut open = true;
@@ -147,36 +165,36 @@ impl TelaEstoque {
     }
 
     fn tabela_pecas(&mut self, ui: &mut egui::Ui) {
-        egui::Grid::new("grid_pecas")
-            .num_columns(6)
-            .spacing([10.0, 4.0])
-            .show(ui, |ui| {
-                ui.strong("Cód. Interno");
-                ui.strong("Estoque");
-                ui.strong("Nome / Descrição");
-                ui.strong("Preço Venda");
-                ui.strong("Localização");
-                ui.strong("Ações");
-                ui.end_row();
-
-                let filtro = self.filtro_peca.to_lowercase();
-                let lista = { self.lista_pecas.lock().unwrap().clone() };
-                for peca in lista.iter().filter(|p| {
-                    p.nome.to_lowercase().contains(&filtro)
-                        || p.descricao.to_lowercase().contains(&filtro)
-                        || p.codigo_interno.to_lowercase().contains(&filtro)
-                }) {
-                    ui.label(&peca.codigo_interno);
-                    ui.label(peca.estoque_atual.to_string());
-                    ui.label(format!("{} — {}", peca.nome, peca.descricao));
+        let filtro = self.filtro_peca.trim().to_lowercase();
+        let lista = self.lista_pecas.lock().map(|p| p.clone()).unwrap_or_default();
+        let filtradas: Vec<Peca> = lista.into_iter().filter(|p| p.nome.to_lowercase().contains(&filtro) || p.descricao.to_lowercase().contains(&filtro) || p.codigo_interno.to_lowercase().contains(&filtro)).collect();
+        ui.horizontal(|ui| { ui.label(egui::RichText::new("Resultados").strong()); ui.label(egui::RichText::new(format!("{}", filtradas.len())).color(ui.visuals().weak_text_color())); });
+        ui.add_space(6.0);
+        if filtradas.is_empty() {
+            ui.add_space(18.0);
+            ui.vertical_centered(|ui| {
+                ui.label(egui::RichText::new("▦").size(34.0).color(egui::Color32::from_rgb(95, 160, 205)));
+                ui.add_space(6.0);
+                ui.heading(if filtro.is_empty() { "Seu estoque ainda não tem peças" } else { "Nenhuma peça encontrada" });
+                ui.label(if filtro.is_empty() { "Cadastre a primeira peça para começar a controlar o estoque." } else { "Tente outro nome, descrição ou código interno." });
+                if filtro.is_empty() && ui.add(egui::Button::new("＋ Cadastrar primeira peça").fill(egui::Color32::from_rgb(0, 112, 190))).clicked() { self.mostrar_form_nova_peca = true; }
+            });
+            return;
+        }
+        egui::ScrollArea::horizontal().show(ui, |ui| {
+            egui::Grid::new("grid_pecas").num_columns(6).striped(true).min_col_width(90.0).spacing([16.0, 10.0]).show(ui, |ui| {
+                ui.strong("Código interno"); ui.strong("Estoque"); ui.strong("Peça / descrição"); ui.strong("Preço de venda"); ui.strong("Localização"); ui.strong("Ações"); ui.end_row();
+                for peca in &filtradas {
+                    ui.label(egui::RichText::new(&peca.codigo_interno).monospace());
+                    ui.label(egui::RichText::new(peca.estoque_atual.to_string()).strong().color(if peca.estoque_atual <= 0 { egui::Color32::from_rgb(255, 125, 125) } else { egui::Color32::from_rgb(110, 205, 155) }));
+                    ui.vertical(|ui| { ui.label(egui::RichText::new(&peca.nome).strong()); ui.label(egui::RichText::new(&peca.descricao).small().color(ui.visuals().weak_text_color())); });
                     ui.label(format!("R$ {:.2}", peca.preco_venda));
-                    ui.label(&peca.localizacao);
-                    if ui.button("✏️").clicked() {
-                        self.peca_selecionada_edicao = Some(peca.clone());
-                    }
+                    ui.label(if peca.localizacao.trim().is_empty() { "—" } else { &peca.localizacao });
+                    if ui.button("Editar").clicked() { self.peca_selecionada_edicao = Some(peca.clone()); }
                     ui.end_row();
                 }
             });
+        });
     }
 
     fn form_nova_peca(&mut self, ui: &mut egui::Ui) {
