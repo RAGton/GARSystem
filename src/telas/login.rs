@@ -109,29 +109,45 @@ impl TelaLogin {
         let estado_atual = self.estado.lock().unwrap().clone();
         let form_disabled = matches!(estado_atual, EstadoLogin::EmProgresso);
 
-        // === PAINEL ESQUERDO: branding + background gradient ===
-        // O gradient é aplicado via Frame::fill() — isso garante cobertura total.
-        // Detalhe do gradient: da cor azul profundo (topo) pro ink (base) com leve vinheta.
-        let bg_azul = Color32::from_rgb(0, 26, 77);   // #001A4D blue-900
-        let bg_ink = Color32::from_rgb(10, 10, 15);   // #0A0A0F ink
+        // === PAINEL ESQUERDO: branding + background premium ===
+        // Spec "Redesign do painel esquerdo" (2026-10-09): gradiente azul-marinho
+        // com transições suaves + iluminação radial cyan sutil + logo + hierarquia
+        // tipográfica + rodapé institucional. Painel DIREITO não é tocado.
+        let bg_azul = Color32::from_rgb(0, 26, 77);    // #001A4D blue-900
+        let bg_meio = Color32::from_rgb(8, 16, 40);   // intermediário
+        let bg_ink = Color32::from_rgb(10, 10, 15);    // #0A0A0F ink
 
         let side_response = egui::SidePanel::left("painel_branding_login")
             .resizable(false)
-            .exact_width(380.0)
+            .exact_width(420.0)
             .frame(egui::Frame::default().fill(bg_ink))
             .show(ctx, |ui| {
                 // Pega a área VISÍVEL do painel (todo o retângulo, não só o disponivel)
                 let rect = ui.max_rect();
                 let painter = ui.painter_at(rect);
 
-                // Gradient vertical: 100% azul no topo, 100% ink no fundo.
-                // Implementação: pintamos 50 "fatias" horizontais com cor interpolada.
-                let slices = 60;
+                // === GRADIENTE AZUL-MARINHO ===
+                // 3 estágios: blue-900 no topo → meio no centro → ink no fundo.
+                // Implementação: 80 fatias horizontais com interpolação em 2 segmentos.
+                let slices = 80;
                 for i in 0..slices {
-                    let t = i as f32 / slices as f32;
-                    let r = (bg_azul.r() as f32 * (1.0 - t) + bg_ink.r() as f32 * t) as u8;
-                    let g = (bg_azul.g() as f32 * (1.0 - t) + bg_ink.g() as f32 * t) as u8;
-                    let b = (bg_azul.b() as f32 * (1.0 - t) + bg_ink.b() as f32 * t) as u8;
+                    let t = i as f32 / (slices - 1) as f32;
+                    // interpola entre (azul → meio) nos primeiros 60% e (meio → ink) nos 40% finais
+                    let (r, g, b) = if t < 0.6 {
+                        let u = t / 0.6;
+                        (
+                            lerp_u8(bg_azul.r(), bg_meio.r(), u),
+                            lerp_u8(bg_azul.g(), bg_meio.g(), u),
+                            lerp_u8(bg_azul.b(), bg_meio.b(), u),
+                        )
+                    } else {
+                        let u = (t - 0.6) / 0.4;
+                        (
+                            lerp_u8(bg_meio.r(), bg_ink.r(), u),
+                            lerp_u8(bg_meio.g(), bg_ink.g(), u),
+                            lerp_u8(bg_meio.b(), bg_ink.b(), u),
+                        )
+                    };
                     let slice = egui::Rect::from_min_max(
                         egui::pos2(rect.left(), rect.top() + t * rect.height()),
                         egui::pos2(rect.right(), rect.top() + (t + 1.0 / slices as f32) * rect.height()),
@@ -139,46 +155,88 @@ impl TelaLogin {
                     painter.rect_filled(slice, 0.0, Color32::from_rgb(r, g, b));
                 }
 
-                // Vinheta: cantos escurecidos (4 retângulos com alpha)
-                let vinheta = Color32::from_black_alpha(100);
-                let cs = 150.0;
-                for (x, y, w, h) in [
-                    (rect.left(), rect.top(), cs, cs),
-                    (rect.right() - cs, rect.top(), cs, cs),
-                    (rect.left(), rect.bottom() - cs, cs, cs),
-                    (rect.right() - cs, rect.bottom() - cs, cs, cs),
+                // === ILUMINAÇÃO RADIAL CYAN SUTIL ===
+                // Halo cyan no topo-centro (alpha 5%), cria profundidade.
+                let glow_center = egui::pos2(rect.center().x, rect.top() + 80.0);
+                let glow_radius = 280.0;
+                let glow_color = cores_tema::CYAN_GLOW.linear_multiply(0.05);
+                painter.add(egui::Shape::circle_filled(glow_center, glow_radius, glow_color));
+
+                // === VINHETA MULTI-CAMADA ===
+                // 4 cantos escurecidos, cada canto com 3 retângulos de alpha decrescente
+                // (efeito de fade radial aproximado sem shader).
+                let cs = 180.0;
+                for (x, y) in [
+                    (rect.left(), rect.top()),
+                    (rect.right() - cs, rect.top()),
+                    (rect.left(), rect.bottom() - cs),
+                    (rect.right() - cs, rect.bottom() - cs),
                 ] {
-                    painter.rect_filled(
-                        egui::Rect::from_min_size(egui::pos2(x, y), egui::vec2(w, h)),
-                        0.0,
-                        vinheta,
-                    );
+                    for i in 0..3 {
+                        let sz = cs - (i as f32) * 50.0;
+                        let off = (i as f32) * 50.0;
+                        let alpha = 110 - (i * 35);
+                        let c = Color32::from_black_alpha(alpha.clamp(0, 255) as u8);
+                        let corner = egui::Rect::from_min_size(
+                            egui::pos2(x + off, y + off),
+                            egui::vec2(sz, sz),
+                        );
+                        painter.rect_filled(corner, 0.0, c);
+                    }
                 }
 
+                // === CONTEÚDO DO PAINEL ESQUERDO ===
+                // Hierarquia: logo (display) + título + descrição + meta
                 ui.allocate_ui_with_layout(
                     rect.size(),
                     egui::Layout::top_down(egui::Align::Center),
                     |ui| {
-                        ui.add_space(SP_XXL * 2.0);
+                        ui.add_space(SP_XXL * 2.5);
+
+                        // === LOGOTIPO ===
+                        // Logo GAR original, ampliado, com glow cyan sutil atrás.
                         if let Some(tex) = logo {
+                            let logo_size = egui::vec2(320.0, 181.0);
+                            let logo_rect = egui::Rect::from_center_size(
+                                rect.center() + egui::vec2(0.0, -rect.height() * 0.18),
+                                logo_size,
+                            );
+                            // Halo cyan (8% alpha) atrás do logo
+                            let glow = cores_tema::CYAN_GLOW.linear_multiply(0.08);
+                            painter.add(egui::Shape::circle_filled(logo_rect.center(), 180.0, glow));
                             ui.add(
                                 egui::Image::new(tex)
-                                    .fit_to_exact_size(egui::vec2(280.0, 158.0))
+                                    .fit_to_exact_size(logo_size)
                                     .maintain_aspect_ratio(true),
                             );
                         }
                         ui.add_space(SP_XL);
+
+                        // === MENSAGEM PRINCIPAL (display) ===
                         ui.label(
-                            egui::RichText::new("Sistema de gestão integrado")
+                            egui::RichText::new("Gestão inteligente.")
+                                .color(cores_tema::TEXT_PRIMARY)
+                                .size(20.0)
+                                .strong(),
+                        );
+                        ui.label(
+                            egui::RichText::new("Operação integrada.")
+                                .color(cores_tema::TEXT_PRIMARY)
+                                .size(20.0)
+                                .strong(),
+                        );
+                        ui.add_space(SP_MD);
+                        // === DESCRIÇÃO (body) ===
+                        ui.label(
+                            egui::RichText::new("Uma plataforma para organizar clientes,")
                                 .color(cores_tema::TEXT_SECONDARY)
                                 .size(tipografia::FONT_BODY),
                         );
                         ui.label(
-                            egui::RichText::new("para assistência técnica")
+                            egui::RichText::new("serviços técnicos e operações em um só lugar.")
                                 .color(cores_tema::TEXT_SECONDARY)
                                 .size(tipografia::FONT_BODY),
                         );
-                        // Versão fica só no footer do painel direito (com copyright)
                     },
                 );
 
@@ -186,17 +244,23 @@ impl TelaLogin {
                 ui.with_layout(
                     egui::Layout::bottom_up(egui::Align::Center),
                     |ui| {
-                        ui.add_space(SP_XXL);
-                        // Badge: ● Licenciado
+                        ui.add_space(SP_XXL + SP_LG);
+                        // Badge: ● Licenciado (com glow verde sutil)
                         ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            // Ponto verde (sucesso) ou cyan
-                            let dot = egui::Shape::circle_filled(
-                                ui.next_widget_position() + egui::vec2(6.0, 6.0),
+                            let badge_pos = ui.next_widget_position();
+                            // Glow verde
+                            let badge_glow = cores_tema::SUCCESS.linear_multiply(0.15);
+                            painter.add(egui::Shape::circle_filled(
+                                badge_pos + egui::vec2(6.0, 6.0),
+                                16.0,
+                                badge_glow,
+                            ));
+                            // Ponto verde
+                            painter.add(egui::Shape::circle_filled(
+                                badge_pos + egui::vec2(6.0, 6.0),
                                 5.0,
                                 cores_tema::SUCCESS,
-                            );
-                            ui.painter().add(dot);
+                            ));
                             ui.add_space(20.0);
                             ui.label(
                                 egui::RichText::new("Licenciado")
@@ -531,6 +595,11 @@ impl TelaLogin {
                 });
             });
     }
+}
+
+/// Interpolação linear entre dois u8 (0-255). `t` em [0.0, 1.0].
+fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
+    (a as f32 * (1.0 - t) + b as f32 * t).round() as u8
 }
 
 /// Prática egui (Emil Ernerfeldt): "Powered by egui + eframe" no rodapé
