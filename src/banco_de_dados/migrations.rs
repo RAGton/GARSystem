@@ -1,6 +1,6 @@
 // src/banco_de_dados/migrations.rs
 //
-// Runner de migrations versionadas para o Senior System.
+// Runner de migrations versionadas para o GAR System.
 //
 // ## Estratégia
 //

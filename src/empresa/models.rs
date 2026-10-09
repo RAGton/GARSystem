@@ -103,7 +103,7 @@ pub struct EmpresaBootstrap {
 /// Origem da senha no bootstrap.
 #[derive(Debug, PartialEq, Eq)]
 pub enum OrigemBootstrap {
-    /// Senha lida da env `SENIOR_BOOTSTRAP_PASSWORD`.
+    /// Senha lida da env `GAR_BOOTSTRAP_PASSWORD`.
     EnvVar,
     /// Senha gerada aleatoriamente (recomendado).
     Aleatoria,

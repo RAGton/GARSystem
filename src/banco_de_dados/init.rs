@@ -7,7 +7,7 @@
 // A partir da v1.9.0, este módulo NÃO cria mais um usuário admin
 // automaticamente. Para criar o primeiro administrador, use o binário CLI:
 //
-//   senior-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
+//   gar-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
 //
 // Este módulo mantém a migration da coluna `role` para compatibilidade
 // com bancos legados (que tinham roles antigos como 'ADM', 'Vendedor',
@@ -41,10 +41,10 @@ pub fn inicializar() {
     }
 
     // SEM criação automática de admin.
-    // Use o CLI `senior-system-admin create-admin` para criar o primeiro.
+    // Use o CLI `gar-system-admin create-admin` para criar o primeiro.
     println!(
         "ℹ️  Nenhum usuário admin criado automaticamente. \
-         Use `senior-system-admin create-admin` se o banco estiver vazio."
+         Use `gar-system-admin create-admin` se o banco estiver vazio."
     );
 }
 

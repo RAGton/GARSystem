@@ -52,7 +52,7 @@ TOTAL    352     352          100.00%
 ## 2. Como reproduzir
 
 ```bash
-cd /workspace/SeniorSystem/.worktrees/p2.6.2a-hardening
+cd /workspace/GARSystem/.worktrees/p2.6.2a-hardening
 
 # 1. Auditoria do SQL executável
 python3 scripts/audit_tenant_id.py

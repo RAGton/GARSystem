@@ -24,7 +24,7 @@
 **Como reproduzir**:
 
 ```bash
-cd /workspace/SeniorSystem/.worktrees/p2.6.2a-hardening
+cd /workspace/GARSystem/.worktrees/p2.6.2a-hardening
 python3 docs/audit-tenant-coverage.py
 # Saída esperada: "Queries sem filtro: 0"
 ```
@@ -218,7 +218,7 @@ if let Some(dot_pos) = permissao.rfind('.') {
 **Comando**:
 
 ```bash
-cd /workspace/SeniorSystem/.worktrees/p2.6.2a-hardening
+cd /workspace/GARSystem/.worktrees/p2.6.2a-hardening
 python3 << 'PYEOF'
 import re, os
 tabelas_com_tenant = {'clientes', 'cotacoes', ...}  # 61 tabelas

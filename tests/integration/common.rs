@@ -7,7 +7,7 @@
 //
 //   # Localmente:
 //   docker run -d --name mysql-test -p 3306:3306 \
-//     -e MYSQL_ROOT_PASSWORD=test -e MYSQL_DATABASE=senior_system_test \
+//     -e MYSQL_ROOT_PASSWORD=test -e MYSQL_DATABASE=gar_system_test \
 //     mysql:8.0
 //   cargo test --test integration -- --include-ignored
 //
@@ -29,7 +29,7 @@ use tokio::time::sleep;
 /// URL padrão de conexão ao MySQL de teste.
 pub fn test_mysql_url() -> String {
     env::var("TEST_MYSQL_URL")
-        .unwrap_or_else(|_| "mysql://root:test@127.0.0.1:3306/senior_system_test".to_string())
+        .unwrap_or_else(|_| "mysql://root:test@127.0.0.1:3306/gar_system_test".to_string())
 }
 
 /// Pool de conexões para o MySQL de teste.
@@ -39,13 +39,13 @@ pub async fn setup_pool() -> Result<Pool, mysql::Error> {
 }
 
 /// Aplica as migrations usando o binário do servidor.
-/// Equivalente a rodar `cargo run --bin senior-system-server` uma vez.
+/// Equivalente a rodar `cargo run --bin gar-system-server` uma vez.
 pub fn aplicar_migrations() -> Result<(), String> {
     let status = Command::new("cargo")
         .args([
             "run",
             "--bin",
-            "senior-system-server",
+            "gar-system-server",
             "--",
             "--migrate-only",
         ])
@@ -106,7 +106,7 @@ pub fn spawn_server(port: u16) -> Result<(Child, String), String> {
         .args([
             "run",
             "--bin",
-            "senior-system-server",
+            "gar-system-server",
             "--",
             "--port",
             &port.to_string(),

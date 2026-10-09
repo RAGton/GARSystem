@@ -29,41 +29,67 @@ use aplicacao::AplicativoPrincipal;
 use eframe::{egui, CreationContext};
 
 // Esta função é responsável por carregar e configurar as fontes customizadas.
+// MVP (2026-10-09): Inter como Proportional (sans principal), JetBrains Mono como Monospace.
 fn configurar_fontes(ctx: &egui::Context) {
     let mut fonts = egui::FontDefinitions::default();
 
-    // Carrega os dados da fonte principal (JetBrains Mono).
-    // A API do egui agora espera um `Arc<FontData>`, e `.into()` faz a conversão.
+    // Inter (sans principal) — 4 pesos embedados
+    fonts.font_data.insert(
+        "Inter-Regular".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/inter/Inter-400.ttf")).into(),
+    );
+    fonts.font_data.insert(
+        "Inter-Medium".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/inter/Inter-500.ttf")).into(),
+    );
+    fonts.font_data.insert(
+        "Inter-SemiBold".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/inter/Inter-600.ttf")).into(),
+    );
+    fonts.font_data.insert(
+        "Inter-Bold".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/inter/Inter-700.ttf")).into(),
+    );
+
+    // JetBrains Mono (mono) — já estava embedado
     fonts.font_data.insert(
         "JetBrainsMono".to_owned(),
         egui::FontData::from_static(include_bytes!("../assets/fonts/JetBrainsMono-Regular.ttf"))
             .into(),
     );
 
-    // Carrega os dados da fonte de emojis.
+    // Emojis
     fonts.font_data.insert(
         "NotoEmoji".to_owned(),
         egui::FontData::from_static(include_bytes!("../assets/fonts/NotoColorEmoji-Regular.ttf"))
             .into(),
     );
 
-    // Define a ordem de prioridade para as fontes, garantindo que os símbolos apareçam.
+    // Proportional (texto normal) = Inter Regular como base
     fonts
         .families
         .entry(egui::FontFamily::Proportional)
         .or_default()
-        .insert(0, "JetBrainsMono".to_owned());
-    fonts
-        .families
-        .entry(egui::FontFamily::Proportional)
-        .or_default()
-        .push("NotoEmoji".to_owned());
+        .splice(0..0, [
+            "Inter-Regular".to_owned(),
+            "Inter-Medium".to_owned(),
+            "Inter-SemiBold".to_owned(),
+            "Inter-Bold".to_owned(),
+        ]);
 
+    // Monospace (valores numéricos, código) = JetBrains Mono
     fonts
         .families
         .entry(egui::FontFamily::Monospace)
         .or_default()
         .insert(0, "JetBrainsMono".to_owned());
+
+    // Emojis no final
+    fonts
+        .families
+        .entry(egui::FontFamily::Proportional)
+        .or_default()
+        .push("NotoEmoji".to_owned());
     fonts
         .families
         .entry(egui::FontFamily::Monospace)
@@ -76,9 +102,10 @@ fn configurar_fontes(ctx: &egui::Context) {
 fn main() -> Result<(), eframe::Error> {
     let opcoes_janela = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([850.0, 500.0])
+            .with_inner_size([1200.0, 720.0])
+            .with_min_inner_size([960.0, 600.0])
             .with_resizable(true)
-            .with_title("Senior System - RAG"),
+            .with_title("GAR System"),
         centered: true,
         ..Default::default()
     };
@@ -87,10 +114,12 @@ fn main() -> Result<(), eframe::Error> {
 
     // A lógica de canais (mpsc) foi completamente removida daqui.
     eframe::run_native(
-        "Senior System - RAG",
+        "GAR System - RAG",
         opcoes_janela,
         Box::new(|cc: &CreationContext| {
             configurar_fontes(&cc.egui_ctx);
+            // O tema é aplicado pelo aplicacao.rs (definir_estilo_azul) em cada
+            // update. Ver src/aplicacao.rs:84. O palette GAR é configurado lá.
 
             // Chamamos `AplicativoPrincipal::new()` sem argumentos.
             Ok(Box::new(AplicativoPrincipal::new(cc)))

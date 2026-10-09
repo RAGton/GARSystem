@@ -1,5 +1,5 @@
 // src/server.rs
-//! Servidor HTTP REST API para o sistema Senior System
+//! Servidor HTTP REST API para o sistema GAR System
 //!
 //! Justificativa P2.6.2c: handlers, structs de resposta e helpers existem
 //! exclusivamente para este binário e não são compartilhados com a lib.
@@ -272,7 +272,7 @@ async fn main() {
         )
         .init();
 
-    tracing::info!("🚀 Iniciando servidor Senior System...");
+    tracing::info!("🚀 Iniciando servidor GAR System...");
 
     if let Err(e) = banco_de_dados::conexao::inicializar_pool() {
         tracing::error!("❌ Falha ao inicializar pool do banco de dados: {:?}", e);
@@ -288,7 +288,7 @@ async fn main() {
 
     // Sub-rotas públicas (sem auth).
     let public = Router::new()
-        .route("/", get(|| async { "Servidor Senior System no ar!" }))
+        .route("/", get(|| async { "Servidor GAR System no ar!" }))
         .route("/livez", get(handler_livez))
         .route("/readyz", get(handler_readyz))
         .route("/login", post(handler_login));

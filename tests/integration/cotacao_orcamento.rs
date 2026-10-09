@@ -11,7 +11,7 @@ mod common;
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn cotacao_criar_listar_obter() {
-    use senior_system::cotacao_orcamento::service as co_service;
+    use gar_system::cotacao_orcamento::service as co_service;
 
     let pool = common::setup_pool().await.expect("MySQL");
     common::aplicar_migrations().expect("migrations");
@@ -44,7 +44,7 @@ async fn cotacao_criar_listar_obter() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn cotacao_workflow_completo() {
-    use senior_system::cotacao_orcamento::{
+    use gar_system::cotacao_orcamento::{
         models::StatusCotacao,
         service as co_service,
     };
@@ -97,7 +97,7 @@ async fn cotacao_workflow_completo() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn anexos_persistem_e_listam() {
-    use senior_system::cotacao_orcamento::{
+    use gar_system::cotacao_orcamento::{
         models::TipoAnexo,
         service as co_service,
     };
@@ -134,7 +134,7 @@ async fn anexos_persistem_e_listam() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn cotacao_para_orcamento_copia_itens_e_calcula_total() {
-    use senior_system::cotacao_orcamento::{
+    use gar_system::cotacao_orcamento::{
         models::StatusCotacao,
         service as co_service,
     };
@@ -173,7 +173,7 @@ async fn cotacao_para_orcamento_copia_itens_e_calcula_total() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn orcamento_decisao_aprova_rejeita() {
-    use senior_system::cotacao_orcamento::{
+    use gar_system::cotacao_orcamento::{
         models::{Decisao, StatusOrcamento},
         service as co_service,
     };
@@ -221,7 +221,7 @@ async fn orcamento_decisao_aprova_rejeita() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn desconto_recalcula_total() {
-    use senior_system::cotacao_orcamento::service as co_service;
+    use gar_system::cotacao_orcamento::service as co_service;
 
     let pool = common::setup_pool().await.expect("MySQL");
     common::aplicar_migrations().expect("migrations");
@@ -236,7 +236,7 @@ async fn desconto_recalcula_total() {
     let orc = co_service::criar_orcamento_vazio(cid, None, None, &ctx).expect("criar");
     co_service::adicionar_item_orcamento(
         orc.id, "Serviço", 1, 500.0,
-        senior_system::cotacao_orcamento::models::CategoriaItem::Servico,
+        gar_system::cotacao_orcamento::models::CategoriaItem::Servico,
         None, None, None, &ctx,
     ).expect("item");
 
@@ -254,7 +254,7 @@ async fn desconto_recalcula_total() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn dashboard_conta_por_status() {
-    use senior_system::cotacao_orcamento::{
+    use gar_system::cotacao_orcamento::{
         models::StatusCotacao,
         service as co_service,
     };

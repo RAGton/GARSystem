@@ -5,7 +5,7 @@
 #[path = "common.rs"]
 mod common;
 
-use senior_system::os_mobile::{self as osm, TipoEvolucao};
+use gar_system::os_mobile::{self as osm, TipoEvolucao};
 
 fn ctx_padrao() -> osm::Contexto {
     osm::Contexto {
@@ -168,10 +168,10 @@ async fn auditoria_offline_dedupe_por_device_evento() {
 
     let data = chrono::Utc::now();
     // Primeira inserção
-    let id1 = senior_system::os_mobile::repository::registrar_auditoria_campo(
+    let id1 = gar_system::os_mobile::repository::registrar_auditoria_campo(
         Some("device-123"),
         1,
-        senior_system::os_mobile::TipoAcaoAuditoria::StatusAlterado,
+        gar_system::os_mobile::TipoAcaoAuditoria::StatusAlterado,
         Some(os_id),
         None, None, None, None, None,
         data,
@@ -179,10 +179,10 @@ async fn auditoria_offline_dedupe_por_device_evento() {
     )
     .expect("insert 1");
     // Segunda inserção com mesma chave = deve ser ignorada (INSERT IGNORE)
-    let id2 = senior_system::os_mobile::repository::registrar_auditoria_campo(
+    let id2 = gar_system::os_mobile::repository::registrar_auditoria_campo(
         Some("device-123"),
         1,
-        senior_system::os_mobile::TipoAcaoAuditoria::StatusAlterado,
+        gar_system::os_mobile::TipoAcaoAuditoria::StatusAlterado,
         Some(os_id),
         None, None, None, None, None,
         data,

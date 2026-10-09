@@ -19,8 +19,8 @@
 mod common;
 
 use mysql::prelude::Queryable;
-use senior_system::empresa as emp;
-use senior_system::rbac;
+use gar_system::empresa as emp;
+use gar_system::rbac;
 
 /// Helper: cria uma empresa para teste e retorna (id, uuid).
 fn criar_empresa_teste(pool: &mysql::Pool, nome: &str) -> Result<(i32, String), String> {
@@ -169,7 +169,7 @@ async fn superadmin_bypass_tenant_id() {
     drop(conn);
 
     // SUPER_ADMIN em tenant 0 tem permissão bypass
-    use senior_system::servicos::PapelUsuario;
+    use gar_system::servicos::PapelUsuario;
     // Em testes de integração, validamos o comportamento via RBAC + cache,
     // não via auth::requer_permissao (que é do binário, não da lib).
     let _papel_admin = PapelUsuario::Administrador;
@@ -230,7 +230,7 @@ async fn unique_constraint_username_por_empresa() {
 
 #[test]
 fn smoke_tenant_obrigatorio_em_banco_de_dados_cliente() {
-    use senior_system::banco_de_dados::cliente;
+    use gar_system::banco_de_dados::cliente;
     // Se tenant_id não fosse exigido, este código compilaria.
     // O fato de EXIGIR tenant_id é o teste.
     let _: fn(i32, u32) -> _ = cliente::obter_cliente_por_id;
@@ -238,46 +238,46 @@ fn smoke_tenant_obrigatorio_em_banco_de_dados_cliente() {
 
 #[test]
 fn smoke_tenant_obrigatorio_em_crm() {
-    use senior_system::banco_de_dados::cliente;
+    use gar_system::banco_de_dados::cliente;
     let _: fn(i32) -> _ = cliente::listar_clientes;
-    use senior_system::crm::repository;
+    use gar_system::crm::repository;
     let _: fn(i32, u32) -> _ = repository::listar_tags_do_cliente;
 }
 
 #[test]
 fn smoke_tenant_obrigatorio_em_operations() {
-    use senior_system::operations::repository;
+    use gar_system::operations::repository;
     let _: fn(i32, u32) -> _ = repository::listar_estados;
     let _: fn(i32, u32) -> _ = repository::listar_transicoes;
 }
 
 #[test]
 fn smoke_tenant_obrigatorio_em_os_mobile() {
-    use senior_system::os_mobile::repository;
+    use gar_system::os_mobile::repository;
     let _: fn(i32, bool) -> _ = repository::listar_templates;
 }
 
 #[test]
 fn smoke_tenant_obrigatorio_em_cotacao_orcamento() {
-    use senior_system::cotacao_orcamento::repository;
+    use gar_system::cotacao_orcamento::repository;
     let _: fn(i32, u32) -> _ = repository::obter_cotacao;
 }
 
 #[test]
 fn smoke_tenant_obrigatorio_em_arquivos() {
-    use senior_system::arquivos::repository;
+    use gar_system::arquivos::repository;
     let _: fn(i32, &str) -> _ = repository::obter_arquivo_por_hash;
 }
 
 #[test]
 fn smoke_tenant_obrigatorio_em_financial() {
-    use senior_system::financial::service;
+    use gar_system::financial::service;
     let _: fn(i32) -> _ = service::dashboard;
 }
 
 #[test]
 fn smoke_requer_permissao_3_niveis() {
-    use senior_system::rbac::service;
+    use gar_system::rbac::service;
     // Retorna Result<bool, _> — sem MySQL, retorna Err
     // O importante é que a função EXISTE e aceita a assinatura
     let _r1: Result<bool, _> = service::tem_permissao(0, 1, "crm.cliente.view");
@@ -285,7 +285,7 @@ fn smoke_requer_permissao_3_niveis() {
 
 #[test]
 fn smoke_tenant_em_servicos() {
-    use senior_system::servicos;
+    use gar_system::servicos;
     let _: fn(i32) -> _ = servicos::listar_clientes;
     let _: fn(i32) -> _ = servicos::listar_pecas;
 }

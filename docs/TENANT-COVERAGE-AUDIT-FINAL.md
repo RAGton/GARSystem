@@ -127,7 +127,7 @@ WHERE a.tenant_id = ? AND ...
 ### Comando para re-auditar:
 
 ```bash
-cd /workspace/SeniorSystem/.worktrees/p2.6.2a-hardening
+cd /workspace/GARSystem/.worktrees/p2.6.2a-hardening
 python3 << 'PYEOF'
 import re, os
 tabelas_com_tenant = { ... }  # 61 tabelas listadas acima

@@ -9,7 +9,7 @@
 
 ## TL;DR
 
-P2.6.2a entregou uma **camada de segurança multi-tenant completa** no Senior System, aplicando **defense in depth** (tenant_id em repos + handlers + queries SQL) e uma **camada RBAC com bypass SUPER_ADMIN + wildcard match**.
+P2.6.2a entregou uma **camada de segurança multi-tenant completa** no GAR System, aplicando **defense in depth** (tenant_id em repos + handlers + queries SQL) e uma **camada RBAC com bypass SUPER_ADMIN + wildcard match**.
 
 | Categoria | Antes (P2.6.1) | Depois (P2.6.2a) |
 |---|---|---|

@@ -1,21 +1,21 @@
 [package]
-name = "senior_system"
-version = "1.8.0"
+name = "gar_system"
+version = "1.10.0"
 edition = "2021"
 # A linha abaixo é opcional, mas ajuda a definir qual programa rodar com o comando "cargo run" simples.
-default-run = "senior-system-gui"
+default-run = "gar-system-gui"
 
 # Seção que define os dois programas (binários) que nosso projeto gera
 [[bin]]
-name = "senior-system-gui"
+name = "gar-system-gui"
 path = "src/main.rs"
 
 [[bin]]
-name = "senior-system-server"
+name = "gar-system-server"
 path = "src/server.rs"
 
 [[bin]]
-name = "senior-system-admin"
+name = "gar-system-admin"
 path = "src/bin/admin_cli.rs"
 
 [[bin]]

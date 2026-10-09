@@ -1,6 +1,6 @@
 // src/bin/admin_cli.rs
 //
-// CLI para bootstrap seguro de administrador do Senior System.
+// CLI para bootstrap seguro de administrador do GAR System.
 //
 // Justificativa P2.6.2c: binário CLI.
 #![allow(dead_code, unused_imports)]
@@ -12,13 +12,13 @@
 // Uso:
 //
 //   # Modo interativo (pede a senha via prompt seguro, sem eco)
-//   senior-system-admin create-admin
+//   gar-system-admin create-admin
 //
 //   # Modo não-interativo (para automação; senha via env ou stdin)
-//   senior-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
+//   gar-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
 //
 //   # Verifica se já existe algum admin
-//   senior-system-admin check
+//   gar-system-admin check
 //
 // Segurança:
 //   * Nunca aceita senha via argumento de linha de comando (vazaria em ps aux).
@@ -30,8 +30,8 @@
 // o usuário administrador inicial. Depois, promova outros usuários via
 // `PUT /usuarios/{username}/papel` (a ser implementado).
 
-use senior_system::banco_de_dados;
-use senior_system::servicos::PapelUsuario;
+use gar_system::banco_de_dados;
+use gar_system::servicos::PapelUsuario;
 use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
 
@@ -103,17 +103,17 @@ fn parse_args() -> Result<Comando, String> {
 fn uso() -> String {
     "\
 Uso:
-  senior-system-admin check
-  senior-system-admin create-admin --username <nome> [opções de senha]
+  gar-system-admin check
+  gar-system-admin create-admin --username <nome> [opções de senha]
 
 Opções de senha (escolha UMA):
   --password-env <VAR>   Lê a senha da variável de ambiente <VAR>
   --password-stdin       Lê a senha do stdin (com confirmação)
 
 Exemplos:
-  senior-system-admin check
+  gar-system-admin check
   ADMIN_PASSWORD=$(openssl rand -base64 24) \\
-    senior-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
+    gar-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
 
 IMPORTANTE:
   * O servidor NÃO cria mais admin automaticamente.
@@ -211,6 +211,22 @@ fn run() -> Result<(), String> {
             // Cria o usuário com papel de Administrador.
             match banco_de_dados::criar_usuario(&username, &senha, PapelUsuario::Administrador) {
                 Ok(_) => {
+                    // BUG-FIX 2026-10-09 (ciclo 3 execução autônoma):
+                    // Sem isso, o user existe em `users` mas NÃO tem linha em
+                    // `user_roles`, então `permissoes_de_usuario` retorna [] e o
+                    // login gera JWT sem permissions → 403 em TODOS os endpoints.
+                    //
+                    // Solução: após criar, buscar o user_id e atribuir role ADMIN
+                    // via SQL direto. Hardcoded no escopo do CLI (1 call site).
+                    if let Err(e) = atribuir_admin_role(&username) {
+                        tracing::warn!(
+                            "Falha ao atribuir role ADMIN ao user '{}': {} \
+                             — o user existe mas não conseguirá usar APIs até corrigir",
+                            username, e
+                        );
+                    } else {
+                        tracing::info!("Role ADMIN atribuída a '{}'", username);
+                    }
                     // Segurança: sobrescreve a senha na memória.
                     let mut s = senha;
                     s.zeroize();
@@ -225,6 +241,57 @@ fn run() -> Result<(), String> {
             }
         }
     }
+}
+
+/// Atribui role ADMIN ao user recém-criado pelo CLI.
+///
+/// Idempotente: se user já tem role, não duplica (INSERT IGNORE).
+/// Garante que o user pode logar e acessar APIs pós-login.
+fn atribuir_admin_role(username: &str) -> Result<(), String> {
+    use mysql::params;
+    use mysql::prelude::Queryable;
+    let mut conn = banco_de_dados::conexao::obter_conexao()
+        .map_err(|e| format!("conexão: {:?}", e))?;
+
+    // 1. buscar user_id
+    let user_id: Option<u32> = conn
+        .exec_first(
+            "SELECT id FROM users WHERE username = :u",
+            params! { "u" => username },
+        )
+        .map_err(|e| format!("busca user: {:?}", e))?;
+    let user_id = user_id.ok_or_else(|| format!("user '{}' não encontrado", username))?;
+
+    // 2. buscar role_id de ADMIN
+    let role_id: Option<u32> = conn
+        .exec_first(
+            "SELECT id FROM roles WHERE codigo = 'ADMIN'",
+            (),
+        )
+        .map_err(|e| format!("busca role: {:?}", e))?;
+    let role_id = role_id.ok_or_else(|| "role ADMIN não existe (rodou migrations?)".to_string())?;
+
+    // 3. buscar tenant_id do user (campo legado em users)
+    let tenant_id: Option<i32> = conn
+        .exec_first(
+            "SELECT COALESCE(tenant_id, 0) FROM users WHERE id = :u",
+            params! { "u" => user_id },
+        )
+        .map_err(|e| format!("busca tenant: {:?}", e))?;
+    let tenant_id = tenant_id.unwrap_or(0);
+
+    // 4. INSERT IGNORE em user_roles (idempotente)
+    conn.exec_drop(
+        "INSERT IGNORE INTO user_roles (user_id, role_id, empresa_id) VALUES (:u, :r, :e)",
+        params! { "u" => user_id, "r" => role_id, "e" => tenant_id },
+    )
+    .map_err(|e| format!("insert user_role: {:?}", e))?;
+
+    tracing::info!(
+        "atribuir_admin_role: user_id={} role_id={} tenant_id={}",
+        user_id, role_id, tenant_id
+    );
+    Ok(())
 }
 
 /// Trait para zerar strings em memória (best-effort).

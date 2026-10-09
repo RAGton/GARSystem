@@ -15,7 +15,7 @@ Resumo de alto nível
 Arquitetura e fluxo de comunicação
 
 1) Fluxo de inicialização
-- Ao iniciar o binário GUI (`senior-system-gui`), `src/main.rs` configura a janela e cria a instância de `AplicativoPrincipal` (em `src/aplicacao.rs`).
+- Ao iniciar o binário GUI (`gar-system-gui`), `src/main.rs` configura a janela e cria a instância de `AplicativoPrincipal` (em `src/aplicacao.rs`).
 - `AplicativoPrincipal` mantém o estado global da aplicação: qual tela está ativa, qual usuário está logado, tema, endereço do servidor e canais de evento.
 
 2) Comunicação GUI → Servidor
@@ -24,15 +24,15 @@ Arquitetura e fluxo de comunicação
 - Quando uma tarefa de background termina, ela notifica a UI (por exemplo via `std::sync::mpsc` enviando `AppEvent::Repaint`), ou coloca resultados em `Arc<Mutex<...>>` partilhados e solicita repaint.
 
 3) Servidor → Banco
-- O servidor (binário `senior-system-server` `src/server.rs`) expõe rotas REST (ex: `/login`, `/ordens`, `/usuarios`) e usa as funções públicas do módulo `servicos` para lógica de negócio.
+- O servidor (binário `gar-system-server` `src/server.rs`) expõe rotas REST (ex: `/login`, `/ordens`, `/usuarios`) e usa as funções públicas do módulo `servicos` para lógica de negócio.
 - O módulo `servicos` delega a persistência a `src/banco_de_dados` (ex.: `banco_de_dados::usuario`, `banco_de_dados::ordem_servico`), que usa a crate `mysql`.
 - Todas as chamadas ao banco centralizam erros em `servicos::ErroAplicacao`.
 
 Mapa de arquivos (resumo)
 - Cargo.toml, Cargo.lock — manifesto e lockfile.
 - README.md — instruções gerais do projeto.
-- src/main.rs — ponto de entrada do GUI (binário `senior-system-gui`).
-- src/server.rs — ponto de entrada do servidor (binário `senior-system-server`) com rotas Axum.
+- src/main.rs — ponto de entrada do GUI (binário `gar-system-gui`).
+- src/server.rs — ponto de entrada do servidor (binário `gar-system-server`) com rotas Axum.
 - src/lib.rs — declara módulos que compõem a biblioteca (reused by bins): `banco_de_dados`, `executor`, `http_client`, `servicos`.
 - src/aplicacao.rs — núcleo do aplicativo GUI: estado global, troca entre telas, eventos. (A seguir: versão comentada linha-a-linha.)
 - src/servicos.rs — modelos de domínio (OrdemServico, Servico, Peca, etc.) e funções de fachada que chamam `banco_de_dados`.

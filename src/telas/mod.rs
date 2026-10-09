@@ -2,6 +2,7 @@
 pub mod componentes;
 pub mod configuracao;
 pub mod login;
+pub mod login_empresas;
 pub mod paginacao;
 pub mod painel_adm;
 pub mod painel_clientes;
@@ -17,3 +18,4 @@ pub mod painel_principal;
 pub mod painel_servicos;
 pub mod painel_tecnico;
 pub mod painel_tecnico_dashboard;
+pub mod theme;

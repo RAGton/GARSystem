@@ -2040,6 +2040,41 @@ dependencies = [
 ]
 
 [[package]]
+name = "gar_system"
+version = "1.10.0"
+dependencies = [
+ "axum",
+ "base64",
+ "bcrypt",
+ "chrono",
+ "dotenvy",
+ "eframe",
+ "egui_extras",
+ "egui_plot",
+ "genpdf",
+ "hex",
+ "image",
+ "jsonwebtoken",
+ "mysql",
+ "num_cpus",
+ "once_cell",
+ "open",
+ "printpdf 0.8.2",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.17",
+ "threadpool",
+ "tokio",
+ "tower-http 0.5.2",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5096,41 +5131,6 @@ name = "semver-parser"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "388a1df253eca08550bef6c72392cfe7c30914bf41df5269b68cbd6ff8f570a3"
-
-[[package]]
-name = "senior_system"
-version = "1.8.0"
-dependencies = [
- "axum",
- "base64",
- "bcrypt",
- "chrono",
- "dotenvy",
- "eframe",
- "egui_extras",
- "egui_plot",
- "genpdf",
- "hex",
- "image",
- "jsonwebtoken",
- "mysql",
- "num_cpus",
- "once_cell",
- "open",
- "printpdf 0.8.2",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 2.0.17",
- "threadpool",
- "tokio",
- "tower-http 0.5.2",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
 
 [[package]]
 name = "serde"

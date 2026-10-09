@@ -1,12 +1,12 @@
-# Prompt: Relatório Geral do Projeto (SeniorSystem)
+# Prompt: Relatório Geral do Projeto (GARSystem)
 
-> Use este prompt em QUALQUER IA nova (Claude Code, Gemini CLI, Codex, etc.) para gerar um relatório executivo completo do SeniorSystem. Cole integralmente abaixo da persona do agente.
+> Use este prompt em QUALQUER IA nova (Claude Code, Gemini CLI, Codex, etc.) para gerar um relatório executivo completo do GARSystem. Cole integralmente abaixo da persona do agente.
 
 ---
 
 ## INSTRUÇÃO
 
-Faça uma auditoria completa do **SeniorSystem** (plataforma SaaS multi-tenant em Rust).
+Faça uma auditoria completa do **GARSystem** (plataforma SaaS multi-tenant em Rust).
 
 Gere um relatório executivo contendo EXATAMENTE estas seções:
 
@@ -135,7 +135,7 @@ Responder objetivamente, **sem opinião, só evidência**:
 
 ```bash
 # Estrutura
-cd /workspace/SeniorSystem/.worktrees/p2.6.2a-hardening/
+cd /workspace/GARSystem/.worktrees/p2.6.2a-hardening/
 ls src/
 
 # LOC por módulo

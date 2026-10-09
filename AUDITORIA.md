@@ -1,4 +1,4 @@
-# AUDITORIA — Senior System
+# AUDITORIA — GAR System
 
 > Documento gerado em **2026-08-21** pelo Lead Architect (Mavis).
 > **Regra-mãe:** NÃO QUEBRAR O QUE JÁ FUNCIONA. Evolução controlada.
@@ -13,9 +13,9 @@
 |---|---|---|
 | Leitura completa do código-fonte | read/grep em 100% dos `.rs` e `.sql` | ✅ |
 | Caça a smells (TODO/FIXME/HACK/panic/unwrap/db!/mock/placeholder/deprecated) | `ripgrep` | ✅ (resultados abaixo) |
-| `cargo check --bin senior-system-server` | Rust 1.98 + libmariadb-dev | ✅ Compila. **17 warnings** (dead-code). |
-| `cargo check --bin senior-system-gui` | mesmo toolchain | ✅ Compila. **40 warnings** (dead-code). |
-| `cargo clippy --bin senior-system-server` | mesmo toolchain | ✅ **22 warnings** (dead-code + 5 redundant_closure). |
+| `cargo check --bin gar-system-server` | Rust 1.98 + libmariadb-dev | ✅ Compila. **17 warnings** (dead-code). |
+| `cargo check --bin gar-system-gui` | mesmo toolchain | ✅ Compila. **40 warnings** (dead-code). |
+| `cargo clippy --bin gar-system-server` | mesmo toolchain | ✅ **22 warnings** (dead-code + 5 redundant_closure). |
 | `cargo test` | mesmo toolchain | ✅ 2 testes passam (ambos em `auth.rs`). **Cobertura ~ 0%.** |
 | `cargo audit` | tentativa | ❌ Não foi possível instalar (sandbox sem rede p/ crates.io após o bootstrap). Análise de deps feita manualmente. |
 | Subir MySQL + smoke test do servidor | — | ❌ Não executado (sandbox não tem Docker/Podman). Inferido por análise estática. |
@@ -27,7 +27,7 @@
 
 ## 1. ESTADO ATUAL — RESUMO EXECUTIVO
 
-Senior System é um **MVP funcional** com cara de produto, mas com a **fundação de segurança e dados em estado pré-produção**. O login parece seguro, mas **o backend não protege praticamente nada** — o JWT é gerado e devolvido, depois **descartado pelo cliente** e **nunca exigido pelo servidor**.
+GAR System é um **MVP funcional** com cara de produto, mas com a **fundação de segurança e dados em estado pré-produção**. O login parece seguro, mas **o backend não protege praticamente nada** — o JWT é gerado e devolvido, depois **descartado pelo cliente** e **nunca exigido pelo servidor**.
 
 **Analogia:** a casa tem uma porta bonita com fechadura, mas a porta está pregada aberta e a chave fica no capacho.
 
@@ -315,7 +315,7 @@ A condição `!usuarios.is_empty() || usuarios.is_empty()` é **sempre verdadeir
 - **`.env` versionado** e três arquivos de env confusos (`.env`, `.env-exemple`, `.env.example`) — duplicação.
 - **`.directory` (KDE)** no repo — não é código, é artefato de SO.
 - **Estrutura flat em `src/`** — não tem `frontend/`, `backend/`, `shared/`, `tests/`, `docs/`, `deploy/`, `installer/` como o prompt sugeriu. Não é P0, mas é P1 se quiser multi-time.
-- **Dois binários (`senior-system-server` e `senior-system-gui`) no mesmo crate** — funciona, mas se for pra times diferentes (mobile depois), é melhor separar.
+- **Dois binários (`gar-system-server` e `gar-system-gui`) no mesmo crate** — funciona, mas se for pra times diferentes (mobile depois), é melhor separar.
 - **`src.lib` é um arquivo vazio** — bug menor; o cargo não precisa disso.
 
 ### 6.2 Código morto
@@ -356,7 +356,7 @@ A condição `!usuarios.is_empty() || usuarios.is_empty()` é **sempre verdadeir
 ### 6.6 Documentação
 
 - README principal fala de v1.5.0, mas Cargo.toml está em 1.8.0 — desincronizado.
-- `SENIORSYSTEM.md` (56 KB) é um mega-doc; difícil de manter.
+- `GAR_SYSTEM.md` (56 KB) é um mega-doc; difícil de manter.
 - Falta `CONTEXT.md` (memória técnica).
 - Falta `CHANGELOG.md`.
 - Falta `LICENSE` (não pode ser SaaS sem licença clara).

@@ -1,7 +1,7 @@
-# Copilot Instructions for Senior System
+# Copilot Instructions for GAR System
 
 ## Visão Geral
-- **Senior System** é um app desktop em Rust usando `eframe`/`egui` para UI e MySQL para persistência.
+- **GAR System** é um app desktop em Rust usando `eframe`/`egui` para UI e MySQL para persistência.
 - O projeto é modular: separa interface, lógica de negócio e acesso a dados.
 - Papéis de usuário (admin, técnico, vendedor, etc.) controlam o acesso a funcionalidades.
 

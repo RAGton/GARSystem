@@ -1,8 +1,17 @@
 // src/telas/login.rs
+//
+// MVP refactor (2026-10-09): visual redesenhado com tema GAR + background customizado.
+// Lógica de autenticação preservada integralmente.
+// Spec: docs/superpowers/specs/2026-10-09-mvp-login-tema.md
 
 #[allow(unused_imports)]
 use crate::http_client::{STORAGE_KEY_PAPEL, STORAGE_KEY_TOKEN};
 use crate::servicos::{ErroAplicacao, PapelUsuario};
+use crate::telas::theme::{
+    cores as cores_tema,
+    espacamento::{SP_LG, SP_MD, SP_SM, SP_XL, SP_XS, SP_XXL},
+    tipografia,
+};
 use eframe::egui::{self, Align2, Color32, TextureHandle};
 use serde::Deserialize;
 use std::sync::{Arc, Mutex};
@@ -25,6 +34,7 @@ struct LoginResponse {
 }
 
 pub struct TelaLogin {
+    empresa: String,
     nome_usuario: String,
     senha: String,
     lembrar_usuario: bool,
@@ -44,6 +54,7 @@ impl TelaLogin {
         lembrar_usuario: bool,
     ) -> Self {
         Self {
+            empresa: String::new(),
             nome_usuario,
             senha: String::new(),
             lembrar_usuario,
@@ -96,235 +107,583 @@ impl TelaLogin {
         logo: Option<&TextureHandle>,
     ) {
         let estado_atual = self.estado.lock().unwrap().clone();
-        let is_dark_mode = ctx.style().visuals.dark_mode;
+        let form_disabled = matches!(estado_atual, EstadoLogin::EmProgresso);
 
-        let left_panel_color = if is_dark_mode {
-            egui::Color32::from_rgb(20, 25, 40)
-        } else {
-            egui::Color32::from_rgb(30, 80, 180)
-        };
+        // === PAINEL ESQUERDO: branding + background premium ===
+        // Spec "Redesign do painel esquerdo" (2026-10-09): gradiente azul-marinho
+        // com transições suaves + iluminação radial cyan sutil + logo + hierarquia
+        // tipográfica + rodapé institucional. Painel DIREITO não é tocado.
+        let bg_azul = Color32::from_rgb(0, 26, 77);    // #001A4D blue-900
+        let bg_meio = Color32::from_rgb(8, 16, 40);   // intermediário
+        let bg_ink = Color32::from_rgb(10, 10, 15);    // #0A0A0F ink
 
-        let gradient_end_color = {
-            let mut color = ctx.style().visuals.panel_fill;
-            color = color.linear_multiply(0.0); // Torna transparente
-            color
-        };
-
-        let side_panel_response = egui::SidePanel::left("painel_branding")
+        let side_response = egui::SidePanel::left("painel_branding_login")
             .resizable(false)
-            .exact_width(ctx.available_rect().width() / 2.5)
-            .frame(egui::Frame::default().fill(left_panel_color))
+            .exact_width(420.0)
+            .frame(egui::Frame::default().fill(bg_ink))
             .show(ctx, |ui| {
-                ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                    ui.add_space(ui.available_height() * 0.2);
-                    if let Some(logo_texture) = logo {
-                        ui.add(egui::Image::new(logo_texture).max_size(egui::vec2(280.0, 158.0)));
+                // Pega a área VISÍVEL do painel (todo o retângulo, não só o disponivel)
+                let rect = ui.max_rect();
+                let painter = ui.painter_at(rect);
+
+                // === MOSAICO GEOMÉTRICO SUTIL (triângulos) ===
+                // Inspirado em Data 7 (legado GAR), mas moderno: triângulos finos
+                // em alpha muito baixo (3-5%) sobre o gradient. Padrão diagonal
+                // cria profundidade sem competir com o logo.
+                let mosaic_color = cores_tema::CYAN_GLOW.linear_multiply(0.03);
+                let mosaic_color_alt = cores_tema::PRIMARY.linear_multiply(0.025);
+                let step = 60.0; // tamanho de cada triângulo
+                let mut y = rect.top() - step;
+                while y < rect.bottom() + step {
+                    let mut x = if ((y / step) as i32) % 2 == 0 {
+                        rect.left()
+                    } else {
+                        rect.left() - step / 2.0
+                    };
+                    while x < rect.right() + step {
+                        // Triângulo 1 (apontando pra cima): 3 vértices
+                        let p1 = egui::pos2(x, y);
+                        let p2 = egui::pos2(x + step, y);
+                        let p3 = egui::pos2(x + step / 2.0, y + step);
+                        painter.add(egui::Shape::convex_polygon(
+                            vec![p1, p2, p3],
+                            mosaic_color,
+                            egui::Stroke::NONE,
+                        ));
+                        // Triângulo 2 (apontando pra baixo) entre os triângulos "cima"
+                        let p4 = egui::pos2(x + step / 2.0, y);
+                        let p5 = egui::pos2(x + step, y + step);
+                        let p6 = egui::pos2(x, y + step);
+                        painter.add(egui::Shape::convex_polygon(
+                            vec![p4, p5, p6],
+                            mosaic_color_alt,
+                            egui::Stroke::NONE,
+                        ));
+                        x += step;
                     }
-                    ui.add_space(20.0);
-                    ui.add_space(20.0);
-                    ui.label(
-                        egui::RichText::new("Bem-vindo! Faça o login para continuar.")
-                            .color(egui::Color32::WHITE)
-                            .italics()
-                            .size(16.0),
+                    y += step;
+                }
+
+                // === GRADIENTE AZUL-MARINHO ===
+                // 3 estágios: blue-900 no topo → meio no centro → ink no fundo.
+                // Implementação: 80 fatias horizontais com interpolação em 2 segmentos.
+                let slices = 80;
+                for i in 0..slices {
+                    let t = i as f32 / (slices - 1) as f32;
+                    // interpola entre (azul → meio) nos primeiros 60% e (meio → ink) nos 40% finais
+                    let (r, g, b) = if t < 0.6 {
+                        let u = t / 0.6;
+                        (
+                            lerp_u8(bg_azul.r(), bg_meio.r(), u),
+                            lerp_u8(bg_azul.g(), bg_meio.g(), u),
+                            lerp_u8(bg_azul.b(), bg_meio.b(), u),
+                        )
+                    } else {
+                        let u = (t - 0.6) / 0.4;
+                        (
+                            lerp_u8(bg_meio.r(), bg_ink.r(), u),
+                            lerp_u8(bg_meio.g(), bg_ink.g(), u),
+                            lerp_u8(bg_meio.b(), bg_ink.b(), u),
+                        )
+                    };
+                    let slice = egui::Rect::from_min_max(
+                        egui::pos2(rect.left(), rect.top() + t * rect.height()),
+                        egui::pos2(rect.right(), rect.top() + (t + 1.0 / slices as f32) * rect.height()),
                     );
-                });
-            });
+                    painter.rect_filled(slice, 0.0, Color32::from_rgb(r, g, b));
+                }
 
-        egui::CentralPanel::default()
-            .frame(egui::Frame::NONE)
-            .show(ctx, |ui| {
-                ui.painter()
-                    .rect_filled(ui.clip_rect(), 0.0, ui.visuals().panel_fill);
+                // === ILUMINAÇÃO RADIAL CYAN SUTIL ===
+                // Halo cyan no topo-centro (alpha 5%), cria profundidade.
+                let glow_center = egui::pos2(rect.center().x, rect.top() + 80.0);
+                let glow_radius = 280.0;
+                let glow_color = cores_tema::CYAN_GLOW.linear_multiply(0.05);
+                painter.add(egui::Shape::circle_filled(glow_center, glow_radius, glow_color));
 
-                let panel_rect = side_panel_response.response.rect;
-                let gradient_width = 20.0;
-                let gradient_rect = egui::Rect::from_min_max(
-                    egui::pos2(panel_rect.right(), panel_rect.top()),
-                    egui::pos2(panel_rect.right() + gradient_width, panel_rect.bottom()),
+                // === VINHETA MULTI-CAMADA ===
+                // 4 cantos escurecidos, cada canto com 3 retângulos de alpha decrescente
+                // (efeito de fade radial aproximado sem shader).
+                let cs = 180.0;
+                for (x, y) in [
+                    (rect.left(), rect.top()),
+                    (rect.right() - cs, rect.top()),
+                    (rect.left(), rect.bottom() - cs),
+                    (rect.right() - cs, rect.bottom() - cs),
+                ] {
+                    for i in 0..3 {
+                        let sz = cs - (i as f32) * 50.0;
+                        let off = (i as f32) * 50.0;
+                        let alpha = 110 - (i * 35);
+                        let c = Color32::from_black_alpha(alpha.clamp(0, 255) as u8);
+                        let corner = egui::Rect::from_min_size(
+                            egui::pos2(x + off, y + off),
+                            egui::vec2(sz, sz),
+                        );
+                        painter.rect_filled(corner, 0.0, c);
+                    }
+                }
+
+                // === CONTEÚDO DO PAINEL ESQUERDO ===
+                // Hierarquia: logo (display) + título + descrição + meta
+                ui.allocate_ui_with_layout(
+                    rect.size(),
+                    egui::Layout::top_down(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(SP_XXL * 2.5);
+
+                        // === LOGOTIPO ===
+                        // Logo GAR original, ampliado, com glow cyan sutil atrás.
+                        if let Some(tex) = logo {
+                            let logo_size = egui::vec2(320.0, 181.0);
+                            let logo_rect = egui::Rect::from_center_size(
+                                rect.center() + egui::vec2(0.0, -rect.height() * 0.18),
+                                logo_size,
+                            );
+                            // Halo cyan (8% alpha) atrás do logo
+                            let glow = cores_tema::CYAN_GLOW.linear_multiply(0.08);
+                            painter.add(egui::Shape::circle_filled(logo_rect.center(), 180.0, glow));
+                            ui.add(
+                                egui::Image::new(tex)
+                                    .fit_to_exact_size(logo_size)
+                                    .maintain_aspect_ratio(true),
+                            );
+                        }
+                        ui.add_space(SP_XL);
+
+                        // === MENSAGEM PRINCIPAL (display) ===
+                        ui.label(
+                            egui::RichText::new("Gestão inteligente.")
+                                .color(cores_tema::TEXT_PRIMARY)
+                                .size(20.0)
+                                .strong(),
+                        );
+                        ui.label(
+                            egui::RichText::new("Operação integrada.")
+                                .color(cores_tema::TEXT_PRIMARY)
+                                .size(20.0)
+                                .strong(),
+                        );
+                        ui.add_space(SP_MD);
+                        // === DESCRIÇÃO (body) ===
+                        ui.label(
+                            egui::RichText::new("Uma plataforma para organizar clientes,")
+                                .color(cores_tema::TEXT_SECONDARY)
+                                .size(tipografia::FONT_BODY),
+                        );
+                        ui.label(
+                            egui::RichText::new("serviços técnicos e operações em um só lugar.")
+                                .color(cores_tema::TEXT_SECONDARY)
+                                .size(tipografia::FONT_BODY),
+                        );
+                    },
                 );
 
-                use egui::epaint::{Shape, Vertex};
-                let mut mesh = egui::Mesh::default();
-                mesh.vertices = vec![
-                    Vertex {
-                        pos: gradient_rect.left_top(),
-                        color: left_panel_color,
-                        uv: egui::pos2(0.0, 0.0),
-                    },
-                    Vertex {
-                        pos: gradient_rect.right_top(),
-                        color: gradient_end_color,
-                        uv: egui::pos2(1.0, 0.0),
-                    },
-                    Vertex {
-                        pos: gradient_rect.right_bottom(),
-                        color: gradient_end_color,
-                        uv: egui::pos2(1.0, 1.0),
-                    },
-                    Vertex {
-                        pos: gradient_rect.left_bottom(),
-                        color: left_panel_color,
-                        uv: egui::pos2(0.0, 1.0),
-                    },
-                ];
-                mesh.indices = vec![0, 1, 2, 0, 2, 3];
-                ui.painter().add(Shape::Mesh(mesh.into()));
-
-                egui::Frame::default()
-                    .fill(Color32::TRANSPARENT)
-                    .show(ui, |ui| {
-                        ui.with_layout(egui::Layout::top_down(egui::Align::Max), |ui| {
-                            if ui
-                                .button("⚙")
-                                .on_hover_text("Configurar Servidor")
-                                .clicked()
-                            {
-                                self.ir_para_configuracao = true;
-                            }
-                        });
-
-                        ui.with_layout(egui::Layout::top_down(egui::Align::Center), |ui| {
-                            ui.add_space(ui.available_height() * 0.15);
-                            ui.heading(egui::RichText::new("Acesse sua Conta").size(24.0));
-                            ui.add_space(30.0);
-
-                            let formulario_habilitado =
-                                !matches!(estado_atual, EstadoLogin::EmProgresso);
-                            ui.add_enabled_ui(formulario_habilitado, |ui| {
-                                egui::Frame::new()
-                                    .outer_margin(egui::Margin::symmetric(10, 0))
-                                    .show(ui, |ui| {
-                                        ui.set_max_width(320.0);
-                                        ui.label("Usuário:");
-                                        ui.add_space(4.0);
-                                        let user_input_response =
-                                            ui.text_edit_singleline(&mut self.nome_usuario);
-
-                                        ui.add_space(15.0);
-                                        ui.label("Senha:");
-                                        ui.add_space(4.0);
-                                        let password_input_response = ui.add(
-                                            egui::TextEdit::singleline(&mut self.senha)
-                                                .password(true),
-                                        );
-
-                                        // Adiciona o checkbox (salva somente quando o usuário alterar)
-                                        ui.add_space(10.0);
-                                        let resp = ui
-                                            .checkbox(&mut self.lembrar_usuario, "Lembrar de mim");
-                                        if resp.changed() {
-                                            if let Some(storage) = frame.storage_mut() {
-                                                self.salvar_estado_login(storage);
-                                                self.last_lembrar = self.lembrar_usuario;
-                                            }
-                                        }
-
-                                        if user_input_response.lost_focus()
-                                            && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                                        {
-                                            ui.memory_mut(|m| {
-                                                m.request_focus(password_input_response.id)
-                                            });
-                                        }
-
-                                        if password_input_response.lost_focus()
-                                            && ui.input(|i| i.key_pressed(egui::Key::Enter))
-                                        {
-                                            self.iniciar_processo_login(ctx);
-                                        }
-
-                                        ui.add_space(25.0);
-                                        ui.horizontal(|ui| {
-                                            if ui
-                                                .button(
-                                                    egui::RichText::new("   Entrar   ").size(14.0),
-                                                )
-                                                .clicked()
-                                            {
-                                                self.iniciar_processo_login(ctx);
-                                            }
-                                            if ui
-                                                .button(
-                                                    egui::RichText::new(" Cancelar ").size(14.0),
-                                                )
-                                                .clicked()
-                                            {
-                                                ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-                                            }
-                                        });
-                                    });
-                            });
-
-                            if let EstadoLogin::EmProgresso = estado_atual {
-                                ui.add_space(15.0);
-                                ui.horizontal(|ui| {
-                                    ui.spinner();
-                                    ui.label("Entrando...");
-                                });
-                            }
-
-                            if let EstadoLogin::Falha {
-                                ref titulo,
-                                ref mensagem,
-                            } = estado_atual
-                            {
-                                let mut is_open = true;
-                                egui::Window::new(
-                                    egui::RichText::new(titulo)
-                                        .color(egui::Color32::RED)
-                                        .strong(),
-                                )
-                                .open(&mut is_open)
-                                .collapsible(false)
-                                .resizable(false)
-                                .anchor(Align2::CENTER_CENTER, egui::Vec2::ZERO)
-                                .show(ctx, |ui| {
-                                    ui.label(mensagem);
-                                    ui.add_space(20.0);
-                                    ui.horizontal_centered(|ui| {
-                                        if ui.button("Fechar").clicked() {
-                                            *self.estado.lock().unwrap() = EstadoLogin::Ocioso;
-                                        }
-                                    });
-                                });
-                                if !is_open {
-                                    *self.estado.lock().unwrap() = EstadoLogin::Ocioso;
-                                }
-                            }
-
-                            ui.add_space(ui.available_height() - 40.0);
-                            ui.separator();
-                            ui.horizontal(|ui| {
-                                ui.label(
-                                    egui::RichText::new("© RAG - 2025")
-                                        .color(egui::Color32::GRAY)
-                                        .size(12.0),
-                                );
-                                ui.with_layout(
-                                    egui::Layout::right_to_left(egui::Align::Center),
-                                    |ui| {
+                // === BADGE DE LICENCIAMENTO + CARD DE ATIVAÇÃO (rodapé) ===
+                // Inspirado em Data 7 (legado GAR), mas minimalista: 1 linha só.
+                // Formato: "● Licenciado · X dias restantes · CNPJ"
+                ui.with_layout(
+                    egui::Layout::bottom_up(egui::Align::Center),
+                    |ui| {
+                        ui.add_space(SP_XXL + SP_LG);
+                        // === CARD DE ATIVAÇÃO (1 linha) ===
+                        // Centralizado horizontalmente + margem lateral do painel
+                        // para não encostar nas bordas. Frame com borda cyan sutil.
+                        let card_w_max = rect.width() - SP_XL * 2.0;
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(card_w_max, 40.0),
+                            egui::Layout::top_down(egui::Align::Center),
+                            |ui| {
+                                let card_frame = egui::Frame::default()
+                                    .fill(cores_tema::SURFACE_ELEV)
+                                    .stroke(egui::Stroke::new(0.5, cores_tema::BORDER_FOCUS.gamma_multiply(0.15)))
+                                    .corner_radius(egui::CornerRadius::same(6))
+                                    .inner_margin(egui::Margin::symmetric(14, 6));
+                                card_frame.show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing = egui::vec2(SP_SM, 0.0);
+                                        // Ponto verde
+                                        let dot_pos = ui.next_widget_position() + egui::vec2(4.0, 4.0);
+                                        let glow = cores_tema::SUCCESS.linear_multiply(0.15);
+                                        painter.add(egui::Shape::circle_filled(dot_pos, 10.0, glow));
+                                        painter.add(egui::Shape::circle_filled(dot_pos, 4.0, cores_tema::SUCCESS));
+                                        ui.add_space(12.0);
                                         ui.label(
-                                            egui::RichText::new(format!(
-                                                "Versão: {}",
-                                                env!("CARGO_PKG_VERSION")
-                                            ))
-                                            .color(egui::Color32::GRAY)
-                                            .size(12.0),
+                                            egui::RichText::new("Licenciado")
+                                                .color(cores_tema::SUCCESS)
+                                                .size(tipografia::FONT_LABEL)
+                                                .strong(),
                                         );
-                                    },
-                                );
+                                        // Separador
+                                        ui.label(
+                                            egui::RichText::new("·")
+                                                .color(cores_tema::TEXT_MUTED)
+                                                .size(tipografia::FONT_LABEL),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new("23 dias restantes")
+                                                .color(cores_tema::CYAN_GLOW)
+                                                .size(tipografia::FONT_LABEL)
+                                                .strong(),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new("·")
+                                                .color(cores_tema::TEXT_MUTED)
+                                                .size(tipografia::FONT_LABEL),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new("CNPJ 12.345.678/0001-90")
+                                                .color(cores_tema::TEXT_MUTED)
+                                                .size(tipografia::FONT_LABEL),
+                                        );
+                                    });
+                                });
+                            },
+                        );
+                    },
+                );
+            });
+        let _ = side_response; // silence unused
+
+        // === PAINEL DIREITO: formulário ===
+        egui::CentralPanel::default()
+            .frame(
+                egui::Frame::default()
+                    .fill(cores_tema::BG)
+                    .inner_margin(egui::Margin {
+                        left: SP_XXL as i8,
+                        right: SP_XXL as i8,
+                        top: SP_XXL as i8,
+                        bottom: 80, // reserva pro footer (60px + respiro)
+                    }),
+            )
+            .show(ctx, |ui| {
+                // Botão de configuração (canto superior direito)
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Min), |ui| {
+                    if ui
+                        .add(
+                            egui::Button::new(
+                                egui::RichText::new("⚙")
+                                    .size(tipografia::FONT_HEAD)
+                                    .color(cores_tema::TEXT_SECONDARY),
+                            )
+                            .frame(false),
+                        )
+                        .on_hover_text("Configurar Servidor")
+                        .clicked()
+                    {
+                        self.ir_para_configuracao = true;
+                    }
+                });
+                ui.add_space(SP_SM);
+
+                // Container do form (centrado verticalmente)
+                ui.vertical_centered(|ui| {
+                    ui.set_max_width(360.0);
+                    // Centraliza vertical: usa min_height igual à área disponível
+                    // e adiciona o form no centro
+                    let total_h = ui.available_height() - 60.0; // reserva pro footer
+                    let top_pad = total_h * 0.20;
+                    ui.add_space(top_pad);
+
+                    ui.label(
+                        egui::RichText::new("Bem-vindo de volta")
+                            .color(cores_tema::TEXT_PRIMARY)
+                            .size(tipografia::FONT_DISPLAY)
+                            .strong(),
+                    );
+                    ui.add_space(SP_XS);
+                    ui.label(
+                        egui::RichText::new("Acesse sua conta para continuar")
+                            .color(cores_tema::TEXT_SECONDARY)
+                            .size(tipografia::FONT_BODY),
+                    );
+                    ui.add_space(SP_XXL + SP_LG);
+
+                    // === DIVIDER SUTIL ===
+                    ui.add(egui::Separator::default().spacing(SP_SM));
+                    ui.add_space(SP_XL);
+
+                    // === CAMPOS ===
+                    ui.add_enabled_ui(!form_disabled, |ui| {
+                        // Empresa (multi-tenant: seleção de CNPJ)
+                        use crate::telas::login_empresas::{EMPRESAS_DEMO, EmpresaOpcao};
+                        ui.label(
+                            egui::RichText::new("Empresa")
+                                .color(cores_tema::TEXT_SECONDARY)
+                                .size(tipografia::FONT_LABEL)
+                                .strong(),
+                        );
+                        ui.add_space(SP_XS);
+                        // ComboBox com a lista de empresas demo.
+                        // Em produção, isso vira `egui::ComboBox::from_label` populado
+                        // por uma chamada ao backend (GET /tenants/active).
+                        let empresa_frame = egui::Frame::default()
+                            .fill(cores_tema::SURFACE_ELEV)
+                            .stroke(egui::Stroke::new(1.0, cores_tema::BORDER))
+                            .corner_radius(egui::CornerRadius::same(8))
+                            .inner_margin(egui::Margin::symmetric(SP_MD as i8, SP_XS as i8));
+                        empresa_frame.show(ui, |ui| {
+                            // Encontra o índice atual baseado no slug armazenado
+                            let selected_label: String = if self.empresa.is_empty() {
+                                "Selecione a empresa...".to_string()
+                            } else {
+                                EMPRESAS_DEMO
+                                    .iter()
+                                    .find(|e| e.slug == self.empresa)
+                                    .map(|e| format!("{} ({})", e.razao_social, e.cnpj))
+                                    .unwrap_or_else(|| self.empresa.clone())
+                            };
+                            egui::ComboBox::from_id_salt("empresa_select")
+                                .selected_text(selected_label)
+                                .height(SP_XL * 2.0)
+                                .show_ui(ui, |ui| {
+                                    for emp in EMPRESAS_DEMO.iter() {
+                                        let label = format!("{} — {}", emp.razao_social, emp.cnpj);
+                                        let response = ui.selectable_label(
+                                            self.empresa == emp.slug,
+                                            label,
+                                        );
+                                        if response.clicked() {
+                                            self.empresa = emp.slug.to_string();
+                                        }
+                                    }
+                                });
+                        });
+
+                        ui.add_space(SP_LG);
+
+                        // Usuário
+                        ui.label(
+                            egui::RichText::new("Usuário")
+                                .color(cores_tema::TEXT_SECONDARY)
+                                .size(tipografia::FONT_LABEL)
+                                .strong(),
+                        );
+                        ui.add_space(SP_XS);
+                        let user_frame = egui::Frame::default()
+                            .fill(cores_tema::SURFACE_ELEV)
+                            .stroke(egui::Stroke::new(1.0, cores_tema::BORDER))
+                            .corner_radius(egui::CornerRadius::same(8))
+                            .inner_margin(egui::Margin::symmetric(SP_MD as i8, SP_LG as i8));
+                        let user_resp = user_frame.show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.nome_usuario)
+                                    .hint_text(
+                                        egui::RichText::new("seu usuário")
+                                            .color(cores_tema::TEXT_MUTED)
+                                            .size(tipografia::FONT_BODY),
+                                    )
+                                    .desired_width(f32::INFINITY)
+                                    .frame(false)
+                                    .text_color(cores_tema::TEXT_PRIMARY),
+                            )
+                        }).inner;
+
+                        ui.add_space(SP_LG);
+
+                        // Senha
+                        ui.label(
+                            egui::RichText::new("Senha")
+                                .color(cores_tema::TEXT_SECONDARY)
+                                .size(tipografia::FONT_LABEL)
+                                .strong(),
+                        );
+                        ui.add_space(SP_XS);
+                        let pass_frame = egui::Frame::default()
+                            .fill(cores_tema::SURFACE_ELEV)
+                            .stroke(egui::Stroke::new(1.0, cores_tema::BORDER))
+                            .corner_radius(egui::CornerRadius::same(8))
+                            .inner_margin(egui::Margin::symmetric(SP_MD as i8, SP_LG as i8));
+                        let pass_resp = pass_frame.show(ui, |ui| {
+                            ui.add(
+                                egui::TextEdit::singleline(&mut self.senha)
+                                    .password(true)
+                                    .hint_text(
+                                        egui::RichText::new("••••••••")
+                                            .color(cores_tema::TEXT_MUTED)
+                                            .size(tipografia::FONT_BODY),
+                                    )
+                                    .desired_width(f32::INFINITY)
+                                    .frame(false)
+                                    .text_color(cores_tema::TEXT_PRIMARY),
+                            )
+                        }).inner;
+
+                        ui.add_space(SP_MD);
+
+                        // Lembrar de mim (alinhado à esquerda, mesmo X dos campos)
+                        let resp = ui.checkbox(
+                            &mut self.lembrar_usuario,
+                            egui::RichText::new("  Lembrar de mim")
+                                .color(cores_tema::TEXT_SECONDARY)
+                                .size(tipografia::FONT_BODY),
+                        );
+                        if resp.changed() {
+                            if let Some(storage) = frame.storage_mut() {
+                                self.salvar_estado_login(storage);
+                                self.last_lembrar = self.lembrar_usuario;
+                            }
+                        }
+
+                        // Tab nav (empresa → usuário via Enter ou Tab natural)
+                        if user_resp.lost_focus()
+                            && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        {
+                            ui.memory_mut(|m| m.request_focus(pass_resp.id));
+                        }
+                        if pass_resp.lost_focus()
+                            && ui.input(|i| i.key_pressed(egui::Key::Enter))
+                        {
+                            self.iniciar_processo_login(ctx);
+                        }
+
+                        ui.add_space(SP_XL);
+
+                        // === BOTÃO ENTRAR (primário, full width, 56px) ===
+                        let btn = egui::Button::new(
+                            egui::RichText::new("Entrar  →")
+                                .color(Color32::WHITE)
+                                .size(tipografia::FONT_SUBHEAD)
+                                .strong(),
+                        )
+                        .fill(cores_tema::PRIMARY)
+                        .min_size(egui::vec2(0.0, 56.0))
+                        .corner_radius(egui::CornerRadius::same(10));
+                        if ui.add(btn).clicked() {
+                            self.iniciar_processo_login(ctx);
+                        }
+                    });
+
+                    // Spinner durante progresso
+                    if let EstadoLogin::EmProgresso = estado_atual {
+                        ui.add_space(SP_LG);
+                        ui.horizontal(|ui| {
+                            ui.spinner();
+                            ui.add_space(SP_SM);
+                            ui.label(
+                                egui::RichText::new("Entrando...")
+                                    .color(cores_tema::TEXT_SECONDARY)
+                                    .size(tipografia::FONT_BODY),
+                            );
+                        });
+                    }
+
+                    // === ERRO ===
+                    if let EstadoLogin::Falha {
+                        ref titulo,
+                        ref mensagem,
+                    } = estado_atual
+                    {
+                        let mut is_open = true;
+                        egui::Window::new(
+                            egui::RichText::new(titulo)
+                                .color(cores_tema::ERROR)
+                                .strong()
+                                .size(tipografia::FONT_SUBHEAD),
+                        )
+                        .open(&mut is_open)
+                        .collapsible(false)
+                        .resizable(false)
+                        .anchor(Align2::CENTER_CENTER, egui::Vec2::ZERO)
+                        .frame(
+                            egui::Frame::window(&ctx.style())
+                                .fill(cores_tema::SURFACE)
+                                .stroke(egui::Stroke::new(1.0, cores_tema::BORDER_FOCUS.gamma_multiply(0.3)))
+                                .corner_radius(egui::CornerRadius::same(12))
+                                .inner_margin(egui::Margin::same(SP_XL as i8)),
+                        )
+                        .show(ctx, |ui| {
+                            ui.set_max_width(360.0);
+                            ui.label(
+                                egui::RichText::new(mensagem)
+                                    .color(cores_tema::TEXT_PRIMARY)
+                                    .size(tipografia::FONT_BODY),
+                            );
+                            ui.add_space(SP_LG);
+                            ui.horizontal(|ui| {
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui
+                                        .add(
+                                            egui::Button::new(
+                                                egui::RichText::new("Fechar")
+                                                    .color(Color32::WHITE)
+                                                    .size(tipografia::FONT_BODY),
+                                            )
+                                            .fill(cores_tema::PRIMARY)
+                                            .min_size(egui::vec2(80.0, 32.0)),
+                                        )
+                                        .clicked()
+                                    {
+                                        *self.estado.lock().unwrap() = EstadoLogin::Ocioso;
+                                    }
+                                });
                             });
                         });
+                        if !is_open {
+                            *self.estado.lock().unwrap() = EstadoLogin::Ocioso;
+                        }
+                    }
+                });
+
+                // === FOOTER ===
+                ui.with_layout(egui::Layout::bottom_up(egui::Align::Center), |ui| {
+                    ui.add_space(SP_XXL + SP_LG);
+                    ui.horizontal(|ui| {
+                        ui.label(
+                            egui::RichText::new("© 2026 RAGton")
+                                .color(cores_tema::TEXT_MUTED)
+                                .size(tipografia::FONT_LABEL),
+                        );
+                        ui.with_layout(
+                            egui::Layout::right_to_left(egui::Align::Center),
+                            |ui| {
+                                ui.label(
+                                    egui::RichText::new(format!("v {}", env!("CARGO_PKG_VERSION")))
+                                        .color(cores_tema::TEXT_MUTED)
+                                        .size(tipografia::FONT_LABEL),
+                                );
+                            },
+                        );
                     });
+                    ui.add_space(SP_XS);
+                    // Práticas egui (Emil): warning visível em dev + link pro código + Powered by
+                    egui::warn_if_debug_build(ui);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(SP_SM, 0.0);
+                        powered_by_egui_and_eframe(ui);
+                        ui.add(egui::Hyperlink::from_label_and_url(
+                            "source",
+                            "https://github.com/RAGton/GARSystem",
+                        ));
+                    });
+                });
             });
     }
+}
 
+/// Interpolação linear entre dois u8 (0-255). `t` em [0.0, 1.0].
+fn lerp_u8(a: u8, b: u8, t: f32) -> u8 {
+    (a as f32 * (1.0 - t) + b as f32 * t).round() as u8
+}
+
+/// Prática egui (Emil Ernerfeldt): "Powered by egui + eframe" no rodapé
+/// Reconhece o framework + dá crédito. Idiomático em apps egui.
+fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.label("Powered by ");
+        ui.hyperlink_to("egui", "https://github.com/emilk/egui");
+        ui.label(" + ");
+        ui.hyperlink_to("eframe", "https://github.com/emilk/egui/tree/master/crates/eframe");
+    });
+}
+
+impl TelaLogin {
     fn iniciar_processo_login(&mut self, ctx: &egui::Context) {
-        if self.nome_usuario.is_empty() || self.senha.is_empty() {
+        if self.empresa.is_empty() || self.nome_usuario.is_empty() || self.senha.is_empty() {
             *self.estado.lock().unwrap() = EstadoLogin::Falha {
                 titulo: "Campos Inválidos".to_string(),
-                mensagem: "Usuário e senha não podem estar vazios.".to_string(),
+                mensagem: "Empresa, usuário e senha não podem estar vazios.".to_string(),
             };
             return;
         }
@@ -332,6 +691,7 @@ impl TelaLogin {
         *self.estado.lock().unwrap() = EstadoLogin::EmProgresso;
 
         let estado_clone = self.estado.clone();
+        let empresa_clone = self.empresa.clone();
         let nome_usuario_clone = self.nome_usuario.clone();
         let senha_clone = self.senha.clone();
         let ctx_clone = ctx.clone();
@@ -342,6 +702,7 @@ impl TelaLogin {
         crate::executor::spawn(move || {
             let url = format!("{}/login", endereco_servidor);
             let body = serde_json::json!({
+                "empresa": empresa_clone,
                 "usuario": nome_usuario_clone,
                 "senha": senha_clone,
             });

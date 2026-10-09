@@ -176,19 +176,68 @@ impl TelaDashboard {
         let estado = self.estado_carregamento.lock().unwrap().clone();
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            // === HEADER COM HIERARQUIA ===
+            // Título grande à esquerda, badge do papel + ações agrupadas à direita
             ui.horizontal(|ui| {
-                ui.heading("Dashboard");
+                ui.add(
+                    egui::Label::new(
+                        egui::RichText::new("Dashboard")
+                            .size(28.0)
+                            .strong()
+                            .color(crate::telas::theme::cores::TEXT_PRIMARY),
+                    ),
+                );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    // Botão de atualizar
-                    if ui.button("🔄 Atualizar").clicked() {
-                        self.dados_carregados = false;
+                    // === Botão Deslogar (outline danger) ===
+                    let logout_btn = egui::Button::new(
+                        egui::RichText::new("⎋ Deslogar")
+                            .color(crate::telas::theme::cores::TEXT_SECONDARY)
+                            .size(13.0),
+                    )
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::new(1.0, crate::telas::theme::cores::BORDER))
+                    .corner_radius(egui::CornerRadius::same(6));
+                    if ui.add(logout_btn).clicked() {
+                        // ação de deslogar
                     }
                     ui.add_space(8.0);
-                    ui.label(format!("Perfil: {:?}", self.papel_usuario));
+
+                    // === Botão Atualizar (outline primary) ===
+                    let refresh_btn = egui::Button::new(
+                        egui::RichText::new("↻ Atualizar")
+                            .color(crate::telas::theme::cores::PRIMARY)
+                            .size(13.0)
+                            .strong(),
+                    )
+                    .fill(egui::Color32::TRANSPARENT)
+                    .stroke(egui::Stroke::new(1.0, crate::telas::theme::cores::PRIMARY))
+                    .corner_radius(egui::CornerRadius::same(6));
+                    if ui.add(refresh_btn).clicked() {
+                        self.dados_carregados = false;
+                    }
+                    ui.add_space(12.0);
+
+                    // === Badge do papel (chip cyan) ===
+                    let papel_label = format!("{:?}", self.papel_usuario);
+                    let badge_frame = egui::Frame::default()
+                        .fill(crate::telas::theme::cores::SURFACE_ELEV)
+                        .stroke(egui::Stroke::new(1.0, crate::telas::theme::cores::BORDER_FOCUS))
+                        .corner_radius(egui::CornerRadius::same(12))
+                        .inner_margin(egui::Margin::symmetric(10, 4));
+                    badge_frame.show(ui, |ui| {
+                        ui.label(
+                            egui::RichText::new(papel_label)
+                                .color(crate::telas::theme::cores::CYAN_GLOW)
+                                .strong()
+                                .size(12.0),
+                        );
+                    });
                 });
             });
 
+            ui.add_space(8.0);
             ui.separator();
+            ui.add_space(16.0);
 
             // Mostrar estado de carregamento
             match estado {
@@ -196,18 +245,62 @@ impl TelaDashboard {
                     ui.vertical_centered(|ui| {
                         ui.add_space(100.0);
                         ui.spinner();
-                        ui.label("Carregando dados do servidor...");
+                        ui.add_space(8.0);
+                        ui.label(
+                            egui::RichText::new("Carregando dados do servidor...")
+                                .color(crate::telas::theme::cores::TEXT_SECONDARY)
+                                .size(14.0),
+                        );
                     });
                     return;
                 }
                 EstadoCarregamento::Erro(ref msg) => {
-                    ui.vertical_centered(|ui| {
-                        ui.add_space(50.0);
-                        ui.colored_label(egui::Color32::RED, "❌ Erro ao carregar dados");
-                        ui.label(msg);
-                        if ui.button("🔄 Tentar Novamente").clicked() {
-                            self.dados_carregados = false;
-                        }
+                    // === CARD DE ERRO ESTILIZADO ===
+                    let error_frame = egui::Frame::default()
+                        .fill(crate::telas::theme::cores::SURFACE_ELEV)
+                        .stroke(egui::Stroke::new(1.0, crate::telas::theme::cores::ERROR))
+                        .corner_radius(egui::CornerRadius::same(8))
+                        .inner_margin(egui::Margin::same(20));
+                    error_frame.show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            ui.label(
+                                egui::RichText::new("⚠")
+                                    .color(crate::telas::theme::cores::ERROR)
+                                    .size(28.0),
+                            );
+                            ui.add_space(12.0);
+                            ui.vertical(|ui| {
+                                ui.label(
+                                    egui::RichText::new("Não foi possível carregar os dados")
+                                        .color(crate::telas::theme::cores::TEXT_PRIMARY)
+                                        .strong()
+                                        .size(16.0),
+                                );
+                                ui.add_space(4.0);
+                                ui.label(
+                                    egui::RichText::new(msg.as_str())
+                                        .color(crate::telas::theme::cores::TEXT_SECONDARY)
+                                        .size(13.0),
+                                );
+                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    let retry_btn = egui::Button::new(
+                                        egui::RichText::new("↻ Tentar novamente")
+                                            .color(egui::Color32::WHITE)
+                                            .strong()
+                                            .size(13.0),
+                                    )
+                                    .fill(crate::telas::theme::cores::PRIMARY)
+                                    .corner_radius(egui::CornerRadius::same(6))
+                                    .min_size(egui::vec2(120.0, 36.0));
+                                    if ui.add(retry_btn).clicked() {
+                                        self.dados_carregados = false;
+                                    }
+                                },
+                            );
+                        });
                     });
                     return;
                 }

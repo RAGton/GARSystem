@@ -1,4 +1,4 @@
-# 📊 RELATÓRIO EXECUTIVO COMPLETO — SeniorSystem
+# 📊 RELATÓRIO EXECUTIVO COMPLETO — GARSystem
 
 > **Data**: 2026-08-25
 > **Versão**: 1.8.0 → 1.9.0-dev
@@ -12,7 +12,7 @@
 
 ## 1.1 O que é o projeto
 
-**SeniorSystem** é uma plataforma SaaS multi-tenant, escrita em Rust, que integra ERP + CRM + Service Desk + Gestão Financeira em um único sistema.
+**GARSystem** é uma plataforma SaaS multi-tenant, escrita em Rust, que integra ERP + CRM + Service Desk + Gestão Financeira em um único sistema.
 
 ## 1.2 Objetivo final
 
@@ -56,9 +56,9 @@ Tornar-se uma plataforma empresarial completa, alternativa a **Odoo, Bitrix24, T
 ## 2.2 Binários
 
 ```toml
-[[bin]] senior-system-gui          # GUI desktop (egui)
-[[bin]] senior-system-server       # HTTP server (Axum)
-[[bin]] senior-system-admin        # CLI administrativo
+[[bin]] gar-system-gui          # GUI desktop (egui)
+[[bin]] gar-system-server       # HTTP server (Axum)
+[[bin]] gar-system-admin        # CLI administrativo
 [[bin]] audit-rbac-achado1         # Auditoria executável (Regra #1)
 ```
 
@@ -276,7 +276,7 @@ cargo clippy --all-targets --all-features
 
 ## 6.4 Acoplamento
 
-- **lib** (`senior_system`): business logic pura
+- **lib** (`gar_system`): business logic pura
 - **bin server.rs**: apenas HTTP handlers
 - **bin audit-rbac-achado1**: auditoria isolada
 - **bin admin_cli**: comandos administrativos
@@ -433,7 +433,7 @@ Faltam conforme regra do usuário:
 ## 11.1 Como Reproduzir Esta Auditoria
 
 ```bash
-cd /workspace/SeniorSystem/.worktrees/p2.6.2a-hardening/
+cd /workspace/GARSystem/.worktrees/p2.6.2a-hardening/
 
 # 1. Compilação
 CARGO_TARGET_DIR=/tmp/cargo-target-p262a cargo check --all-targets
@@ -469,7 +469,7 @@ CARGO_TARGET_DIR=/tmp/cargo-target-p262a cargo run --bin audit-rbac-achado1
 
 ## 11.3 Skills Permanentes
 
-- `/workspace/.skills/seniorsystem-dev/SKILL.md` (esta skill)
+- `/workspace/.skills/gar-system-dev/SKILL.md` (esta skill)
 - `/workspace/.skills/saas-tenant-audit-rust/SKILL.md` (auditoria forense)
 - `/workspace/.skills/evidence-based-validation/SKILL.md` (validação executável)
 - `/workspace/.skills/worktree-management/SKILL.md` (git worktree)

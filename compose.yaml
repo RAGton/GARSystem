@@ -5,7 +5,7 @@ version: '3.8'
 services:
   # O serviço do nosso backend
   server:
-    image: seniorsystem_server:latest
+    image: gar_system_server:latest
     build:
       context: .
     ports:
