@@ -107,7 +107,8 @@ pub fn obter_configuracao_efetiva(empresa_id: i32) -> Result<EmpresaConfiguracao
 ///   - Cria o user `admin@local` (NÃO `admin`!) com bcrypt hash.
 ///   - Atribui role ADMIN (não SUPER_ADMIN!) na empresa alvo.
 ///   - Marca `empresa_configuracao.bootstrap_done = TRUE`.
-///   - Loga a senha UMA VEZ com `tracing::warn!`.
+///   - **NÃO loga a senha** (F1 da auditoria 2026-10-09). A senha aleatória
+///     é retornada no struct `EmpresaBootstrap` para o operator ver na CLI;
 ///
 /// **PROIBIDO** criar `admin/admin` ou `admin/<vazio>`. Esta função é a
 /// única via de criação de admin inicial e é safe-by-construction.
@@ -170,23 +171,33 @@ pub fn bootstrap_seguro(empresa_id: i32) -> Result<EmpresaBootstrap, ErroAplicac
     // 5) Marcar bootstrap_done
     repository::marcar_bootstrap_done(empresa_id)?;
 
-    // 6) Logar senha (uma única vez)
+    // 6) Notificar bootstrap (sem expor senha em log)
+    // SECURITY: nunca logar senha em texto plano. Logs vão pra journald/syslog
+    // e podem vazar. A senha aleatória é retornada no `EmpresaBootstrap`
+    // para o operator ver na CLI; ela não aparece no log.
+    // Audit: docs/AUDIT-2026-10-09.md (F1).
     match origem {
         OrigemBootstrap::EnvVar => {
             tracing::warn!(
                 "🔐 BOOTSTRAP — Empresa {}: admin criado com senha de GAR_BOOTSTRAP_PASSWORD. \
-                 NÃO será exibida novamente.",
+                 Senha NÃO exibida (vem da env var do operator).",
                 empresa_id
             );
         }
         OrigemBootstrap::Aleatoria => {
+            // Mostra apenas o prefixo (primeiros 2 chars) pra confirmar que foi gerada,
+            // sem expor a senha completa. O operator recebe a senha completa no
+            // retorno da função (EmpresaBootstrap::admin_senha).
+            let prefixo = if senha.chars().count() >= 2 {
+                senha.chars().take(2).collect::<String>() + "***"
+            } else {
+                "***".to_string()
+            };
             tracing::warn!(
                 "🔐 BOOTSTRAP — Empresa {}: admin criado com senha ALEATÓRIA. \
-                 Guarde em local seguro (NÃO será exibida novamente):\n  \
-                 username: {}\n  \
-                 senha: {}\n  \
-                 origem: SENHA ALEATÓRIA (defina GAR_BOOTSTRAP_PASSWORD antes de subir para controlar)",
-                empresa_id, username, senha
+                 Senha gerada (prefixo: {}). Defina GAR_BOOTSTRAP_PASSWORD \
+                 antes do próximo deploy para ter controle sobre a senha.",
+                empresa_id, prefixo
             );
         }
     }
