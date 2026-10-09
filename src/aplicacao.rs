@@ -468,7 +468,7 @@ impl AplicativoPrincipal {
             .papel_usuario_logado
             .expect("Usuário deveria estar logado");
 
-        if let Some(evento) = sidebar::mostrar(ctx, papel, self.sidebar_aberto, self.logo.as_ref())
+        if let Some(evento) = sidebar::mostrar(ctx, papel, self.sidebar_aberto, self.logo.as_ref(), &self.tela_ativa)
         {
             self.processar_evento(evento);
             evento_processado = true;

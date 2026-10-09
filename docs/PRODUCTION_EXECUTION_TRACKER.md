@@ -142,3 +142,20 @@ Atualizado a cada ciclo. Não apagar entradas; só adicionar status/data.
 - ⏸️ Auth/cookies: pendente auditoria
 - ⏸️ Tenant isolation: pendente auditoria
 
+
+---
+
+## Ciclo 4 — Modernização da UI e Correção de Bugs (2026-10-09)
+
+**ID:** UI-MOD-001
+**Status:** PASSOU
+**Evidência:**
+- Branch `ui/erp-modernization` (PR #7) finalizada, corrigida e mesclada na master.
+- Resolvido bug bloqueante no cadastro de peças (validação exigia campo "Nome" não existente no formulário nem no BD).
+- Substituição da lógica original por validação pura. Estoque e preço devidamente renderizados.
+- Repaint automático do relógio na barra superior usando `ctx.request_repaint_after`.
+- Implementado novo design de sidebar em `src/telas/componentes/sidebar.rs`, usando item padronizado com hover/ativo e removendo itens desabilitados (Funcionalidades Futuras).
+- Testes automatizados passando (`cargo test --lib` e `cargo test --bin gar-system-gui`).
+- *Limitação conhecida:* "Criar/Editar peça" grava direto no banco via chamada de driver no cliente. O refatoramento para API com rotas `POST/PUT /estoque/pecas` ficará para um próximo ciclo a fim de não alterar as assinaturas atuais do backend por estética, conforme requisito.
+
+**Próximo passo:** Estender o padrão moderno da barra e do `ui_kit` (quando criado) para as demais telas (Clientes, Serviços, etc).
