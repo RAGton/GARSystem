@@ -126,6 +126,44 @@ impl TelaLogin {
                 let rect = ui.max_rect();
                 let painter = ui.painter_at(rect);
 
+                // === MOSAICO GEOMÉTRICO SUTIL (triângulos) ===
+                // Inspirado em Data 7 (legado GAR), mas moderno: triângulos finos
+                // em alpha muito baixo (3-5%) sobre o gradient. Padrão diagonal
+                // cria profundidade sem competir com o logo.
+                let mosaic_color = cores_tema::CYAN_GLOW.linear_multiply(0.03);
+                let mosaic_color_alt = cores_tema::PRIMARY.linear_multiply(0.025);
+                let step = 60.0; // tamanho de cada triângulo
+                let mut y = rect.top() - step;
+                while y < rect.bottom() + step {
+                    let mut x = if ((y / step) as i32) % 2 == 0 {
+                        rect.left()
+                    } else {
+                        rect.left() - step / 2.0
+                    };
+                    while x < rect.right() + step {
+                        // Triângulo 1 (apontando pra cima): 3 vértices
+                        let p1 = egui::pos2(x, y);
+                        let p2 = egui::pos2(x + step, y);
+                        let p3 = egui::pos2(x + step / 2.0, y + step);
+                        painter.add(egui::Shape::convex_polygon(
+                            vec![p1, p2, p3],
+                            mosaic_color,
+                            egui::Stroke::NONE,
+                        ));
+                        // Triângulo 2 (apontando pra baixo) entre os triângulos "cima"
+                        let p4 = egui::pos2(x + step / 2.0, y);
+                        let p5 = egui::pos2(x + step, y + step);
+                        let p6 = egui::pos2(x, y + step);
+                        painter.add(egui::Shape::convex_polygon(
+                            vec![p4, p5, p6],
+                            mosaic_color_alt,
+                            egui::Stroke::NONE,
+                        ));
+                        x += step;
+                    }
+                    y += step;
+                }
+
                 // === GRADIENTE AZUL-MARINHO ===
                 // 3 estágios: blue-900 no topo → meio no centro → ink no fundo.
                 // Implementação: 80 fatias horizontais com interpolação em 2 segmentos.
@@ -240,41 +278,59 @@ impl TelaLogin {
                     },
                 );
 
-                // === BADGE DE LICENCIAMENTO (rodapé do painel esquerdo) ===
+                // === BADGE DE LICENCIAMENTO + CARD DE ATIVAÇÃO (rodapé) ===
+                // Inspirado em Data 7 (legado GAR), mas minimalista: 1 linha só.
+                // Formato: "● Licenciado · X dias restantes · CNPJ"
                 ui.with_layout(
                     egui::Layout::bottom_up(egui::Align::Center),
                     |ui| {
                         ui.add_space(SP_XXL + SP_LG);
-                        // Badge: ● Licenciado (com glow verde sutil)
-                        ui.horizontal(|ui| {
-                            let badge_pos = ui.next_widget_position();
-                            // Glow verde
-                            let badge_glow = cores_tema::SUCCESS.linear_multiply(0.15);
-                            painter.add(egui::Shape::circle_filled(
-                                badge_pos + egui::vec2(6.0, 6.0),
-                                16.0,
-                                badge_glow,
-                            ));
-                            // Ponto verde
-                            painter.add(egui::Shape::circle_filled(
-                                badge_pos + egui::vec2(6.0, 6.0),
-                                5.0,
-                                cores_tema::SUCCESS,
-                            ));
-                            ui.add_space(20.0);
-                            ui.label(
-                                egui::RichText::new("Licenciado")
-                                    .color(cores_tema::SUCCESS)
-                                    .size(tipografia::FONT_LABEL)
-                                    .strong(),
-                            );
+                        // === CARD DE ATIVAÇÃO (1 linha) ===
+                        // Framed com borda cyan-glow sutil, mostra status + dias
+                        let card_frame = egui::Frame::default()
+                            .fill(cores_tema::SURFACE_ELEV)
+                            .stroke(egui::Stroke::new(1.0, cores_tema::BORDER_FOCUS.gamma_multiply(0.3)))
+                            .corner_radius(egui::CornerRadius::same(6))
+                            .inner_margin(egui::Margin::symmetric(12, 6));
+                        card_frame.show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing = egui::vec2(SP_SM, 0.0);
+                                // Ponto verde
+                                let dot_pos = ui.next_widget_position() + egui::vec2(4.0, 4.0);
+                                let glow = cores_tema::SUCCESS.linear_multiply(0.15);
+                                painter.add(egui::Shape::circle_filled(dot_pos, 10.0, glow));
+                                painter.add(egui::Shape::circle_filled(dot_pos, 4.0, cores_tema::SUCCESS));
+                                ui.add_space(12.0);
+                                ui.label(
+                                    egui::RichText::new("Licenciado")
+                                        .color(cores_tema::SUCCESS)
+                                        .size(tipografia::FONT_LABEL)
+                                        .strong(),
+                                );
+                                // Separador
+                                ui.label(
+                                    egui::RichText::new("·")
+                                        .color(cores_tema::TEXT_MUTED)
+                                        .size(tipografia::FONT_LABEL),
+                                );
+                                ui.label(
+                                    egui::RichText::new("23 dias restantes")
+                                        .color(cores_tema::CYAN_GLOW)
+                                        .size(tipografia::FONT_LABEL)
+                                        .strong(),
+                                );
+                                ui.label(
+                                    egui::RichText::new("·")
+                                        .color(cores_tema::TEXT_MUTED)
+                                        .size(tipografia::FONT_LABEL),
+                                );
+                                ui.label(
+                                    egui::RichText::new("CNPJ 12.345.678/0001-90")
+                                        .color(cores_tema::TEXT_MUTED)
+                                        .size(tipografia::FONT_LABEL),
+                                );
+                            });
                         });
-                        ui.add_space(SP_SM);
-                        ui.label(
-                            egui::RichText::new("CNPJ 12.345.678/0001-90")
-                                .color(cores_tema::TEXT_MUTED)
-                                .size(tipografia::FONT_LABEL),
-                        );
                     },
                 );
             });
