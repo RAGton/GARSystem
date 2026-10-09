@@ -384,6 +384,9 @@ impl AplicativoPrincipal {
         let mut deslogar_clicado = false;
         let mut evento_processado = false;
 
+        // Mantém o relógio da barra superior atualizado sem exigir interação.
+        ctx.request_repaint_after(std::time::Duration::from_secs(1));
+
         egui::TopBottomPanel::top("barra_superior")
             .frame(
                 egui::Frame::new()
@@ -414,7 +417,11 @@ impl AplicativoPrincipal {
                         }
 
                         if ui
-                            .button(if self.tema_atual == Tema::Escuro { "☀" } else { "☾" })
+                            .button(if self.tema_atual == Tema::Escuro {
+                                "☀"
+                            } else {
+                                "☾"
+                            })
                             .on_hover_text("Alternar tema")
                             .clicked()
                         {
@@ -445,7 +452,9 @@ impl AplicativoPrincipal {
                         ui.separator();
                         ui.label(
                             egui::RichText::new(
-                                chrono::Local::now().format("%d/%m/%Y  %H:%M:%S").to_string(),
+                                chrono::Local::now()
+                                    .format("%d/%m/%Y  %H:%M:%S")
+                                    .to_string(),
                             )
                             .monospace()
                             .color(egui::Color32::from_rgb(160, 177, 197)),
