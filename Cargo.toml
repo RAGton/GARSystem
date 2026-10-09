@@ -36,7 +36,7 @@ egui_plot = "0.34.0"
 egui_extras = { version = "0.33.0", features = ["chrono"] }
 threadpool = "1.8"
 num_cpus = "1.17"
-chrono = { version = "0.4", default-features = false, features = ["std", "serde"] }
+chrono = { version = "0.4", default-features = false, features = ["std", "serde", "clock"] }
 
 # --- Dependências para o Servidor (Backend) ---
 # Usamos Axum, o framework web moderno que integra com Tokio

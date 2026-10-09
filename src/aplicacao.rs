@@ -384,40 +384,85 @@ impl AplicativoPrincipal {
         let mut deslogar_clicado = false;
         let mut evento_processado = false;
 
-        egui::TopBottomPanel::top("barra_superior").show(ctx, |ui| {
-            ui.horizontal(|ui| {
-                if ui.button("☰").clicked() {
-                    self.sidebar_aberto = !self.sidebar_aberto;
-                }
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Deslogar 📴").clicked() {
-                        deslogar_clicado = true;
-                    }
+        // Mantém o relógio da barra superior atualizado sem exigir interação.
+        ctx.request_repaint_after(std::time::Duration::from_secs(1));
+
+        egui::TopBottomPanel::top("barra_superior")
+            .frame(
+                egui::Frame::new()
+                    .fill(egui::Color32::from_rgb(20, 25, 34))
+                    .inner_margin(egui::Margin::symmetric(12, 7))
+                    .stroke(egui::Stroke::new(1.0, egui::Color32::from_rgb(43, 55, 70))),
+            )
+            .show(ctx, |ui| {
+                ui.horizontal(|ui| {
                     if ui
-                        .button(if self.tema_atual == Tema::Escuro {
-                            "☀️"
-                        } else {
-                            "🌙"
-                        })
+                        .button(egui::RichText::new("☰").size(17.0))
+                        .on_hover_text("Mostrar ou ocultar navegação")
                         .clicked()
                     {
-                        self.tema_atual = if self.tema_atual == Tema::Escuro {
-                            Tema::Claro
-                        } else {
-                            Tema::Escuro
-                        };
-                        if let Some(storage) = frame.storage_mut() {
-                            let tema_str = if self.tema_atual == Tema::Claro {
-                                "claro".to_string()
-                            } else {
-                                "escuro".to_string()
-                            };
-                            storage.set_string("tema", tema_str);
-                        }
+                        self.sidebar_aberto = !self.sidebar_aberto;
                     }
+
+                    ui.separator();
+                    ui.label(
+                        egui::RichText::new("GAR System")
+                            .strong()
+                            .color(egui::Color32::from_rgb(75, 190, 255)),
+                    );
+
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if ui.button("Sair").on_hover_text("Encerrar sessão").clicked() {
+                            deslogar_clicado = true;
+                        }
+
+                        if ui
+                            .button(if self.tema_atual == Tema::Escuro {
+                                "☀"
+                            } else {
+                                "☾"
+                            })
+                            .on_hover_text("Alternar tema")
+                            .clicked()
+                        {
+                            self.tema_atual = if self.tema_atual == Tema::Escuro {
+                                Tema::Claro
+                            } else {
+                                Tema::Escuro
+                            };
+                            if let Some(storage) = frame.storage_mut() {
+                                let tema_str = if self.tema_atual == Tema::Claro {
+                                    "claro".to_string()
+                                } else {
+                                    "escuro".to_string()
+                                };
+                                storage.set_string("tema", tema_str);
+                            }
+                        }
+
+                        ui.separator();
+                        let usuario = self.usuario_logado.as_deref().unwrap_or("Usuário");
+                        ui.label(
+                            egui::RichText::new(format!("◉ {}", usuario))
+                                .strong()
+                                .color(egui::Color32::from_rgb(220, 228, 239)),
+                        )
+                        .on_hover_text("Usuário autenticado nesta sessão");
+
+                        ui.separator();
+                        ui.label(
+                            egui::RichText::new(
+                                chrono::Local::now()
+                                    .format("%d/%m/%Y  %H:%M:%S")
+                                    .to_string(),
+                            )
+                            .monospace()
+                            .color(egui::Color32::from_rgb(160, 177, 197)),
+                        )
+                        .on_hover_text("Data e hora local do dispositivo");
+                    });
                 });
             });
-        });
 
         let papel = self
             .papel_usuario_logado
