@@ -4,7 +4,7 @@
 // de APIs). Para reduzir o ruído nos builds de desenvolvimento, adicionamos
 // allows condicionais. Em release, os warnings continuam ativos.
 // Justificativa P2.6.2c: muitas funções `pub` existem como API pública
-// (chamadas pelo `bin/senior-system-server`, GUI, ou admin CLI) e não são
+// (chamadas pelo `bin/gar-system-server`, GUI, ou admin CLI) e não são
 // usadas dentro da `lib` em si. Em release, o lint deve ser considerado
 // para auditoria de API surface, mas para P2.6.2c manteremos compat.
 #![allow(dead_code, unused_imports)]

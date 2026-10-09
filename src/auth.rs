@@ -1,5 +1,5 @@
 // src/auth.rs
-//! Módulo de autenticação JWT para o servidor Senior System
+//! Módulo de autenticação JWT para o servidor GAR System
 //!
 //! Este módulo gerencia a criação e validação de tokens JWT,
 //! garantindo que apenas usuários autenticados possam acessar

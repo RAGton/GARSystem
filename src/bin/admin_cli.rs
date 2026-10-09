@@ -1,6 +1,6 @@
 // src/bin/admin_cli.rs
 //
-// CLI para bootstrap seguro de administrador do Senior System.
+// CLI para bootstrap seguro de administrador do GAR System.
 //
 // Justificativa P2.6.2c: binário CLI.
 #![allow(dead_code, unused_imports)]
@@ -12,13 +12,13 @@
 // Uso:
 //
 //   # Modo interativo (pede a senha via prompt seguro, sem eco)
-//   senior-system-admin create-admin
+//   gar-system-admin create-admin
 //
 //   # Modo não-interativo (para automação; senha via env ou stdin)
-//   senior-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
+//   gar-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
 //
 //   # Verifica se já existe algum admin
-//   senior-system-admin check
+//   gar-system-admin check
 //
 // Segurança:
 //   * Nunca aceita senha via argumento de linha de comando (vazaria em ps aux).
@@ -30,8 +30,8 @@
 // o usuário administrador inicial. Depois, promova outros usuários via
 // `PUT /usuarios/{username}/papel` (a ser implementado).
 
-use senior_system::banco_de_dados;
-use senior_system::servicos::PapelUsuario;
+use gar_system::banco_de_dados;
+use gar_system::servicos::PapelUsuario;
 use std::io::{self, BufRead, Write};
 use std::process::ExitCode;
 
@@ -103,17 +103,17 @@ fn parse_args() -> Result<Comando, String> {
 fn uso() -> String {
     "\
 Uso:
-  senior-system-admin check
-  senior-system-admin create-admin --username <nome> [opções de senha]
+  gar-system-admin check
+  gar-system-admin create-admin --username <nome> [opções de senha]
 
 Opções de senha (escolha UMA):
   --password-env <VAR>   Lê a senha da variável de ambiente <VAR>
   --password-stdin       Lê a senha do stdin (com confirmação)
 
 Exemplos:
-  senior-system-admin check
+  gar-system-admin check
   ADMIN_PASSWORD=$(openssl rand -base64 24) \\
-    senior-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
+    gar-system-admin create-admin --username admin --password-env ADMIN_PASSWORD
 
 IMPORTANTE:
   * O servidor NÃO cria mais admin automaticamente.

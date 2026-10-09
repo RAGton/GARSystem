@@ -7,7 +7,7 @@ use std::thread;
 use std::time::Duration;
 
 const DISCOVERY_PORT: u16 = 3001;
-const DISCOVERY_MESSAGE: &str = "SENIOR_SYSTEM_DISCOVERY_REQUEST";
+const DISCOVERY_MESSAGE: &str = "GAR_SYSTEM_DISCOVERY_REQUEST";
 
 #[derive(Clone, PartialEq, Debug)]
 pub enum EstadoScanner {

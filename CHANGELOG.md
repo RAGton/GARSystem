@@ -4,6 +4,39 @@ Todas as mudanças notáveis neste projeto são documentadas aqui.
 O formato segue [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/),
 e este projeto segue [Versionamento Semântico](https://semver.org/lang/pt-BR/).
 
+## [1.10.0] — 2026-10-09 — Rebranding GAR System
+
+### ✨ Changed
+- **Rebranding completo:** `senior_system` → `gar_system` em todo o projeto.
+  - Crate Rust: `gar_system` (era `senior_system`)
+  - Binários: `gar-system-gui`, `gar-system-server`, `gar-system-admin`, `audit-rbac-achado1`
+  - Env vars: `gar_app` (era `senior_app`), `gar_system_server` (era `senior_system_server`),
+    `GAR_BOOTSTRAP_PASSWORD` (era `SENIOR_BOOTSTRAP_PASSWORD`),
+    `GAR_PERMISSION_CACHE_TTL_SECS` (era `SENIOR_PERMISSION_CACHE_TTL_SECS`),
+    `GAR_SYSTEM_DISCOVERY_REQUEST` (era `SENIOR_SYSTEM_DISCOVERY_REQUEST`)
+  - Compose service / imagem: `gar_system_server` (era `seniorsystem_server`)
+  - DB default: `gar_system` (era `senior_system`)
+- Documento legado `SENIORSYSTEM.md` renomeado para `GAR_SYSTEM.md` (preserva histórico via `git mv`).
+- **Nova identidade visual:**
+  - Paleta: cyan `#00E5FF` (destaque), azul `#0096FF` (primária), `#0047AB` (secundária),
+    `#001A4D` (profundidade), prata `#C0C0C0` (metálico), ink `#0A0A0F` (background).
+  - `assets/logo.png` substituída pela nova logo horizontal (RGBA, fundo transparente).
+  - `assets/logo-mark.png` adicionado — só a garra (favicon/avatar/marca isolada).
+
+### 🛡️ Preservado (deliberadamente)
+- `Senior Engineer` (cargo humano em `AUDITORIA.md` e `P0-REPORT.md`).
+- `/workspace/SeniorSystem` e `https://github.com/RAGton/SeniorSystem` (referências históricas
+  de rollback — apontam para o repo antigo, antes do rebranding).
+
+### 🔬 Verified
+- `cargo check --all-targets` → ✅ exit 0 (5m28s, deps inalteradas, 1 warning de dep transitiva).
+- `grep -ril senior --exclude-dir=target --exclude-dir=.git` → ✅ 0 hits (exceto preservados).
+- Hash do `assets/logo.png` mudou de `452f052f…` para `9c9313eb…`.
+
+### ⚠️ Not Verified
+- `cargo clippy` (binário `clippy` ausente no toolchain Nix desta sessão).
+- `cargo test --lib` → ✅ 92 passed; 0 failed; 0 ignored; finished in 0.02s.
+
 ## [Não lançado] — 1.9.0 — Fundação P0
 
 ### ⚠️ Breaking Changes

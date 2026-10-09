@@ -13,8 +13,8 @@ mod common;
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn observacao_criar_persiste_e_gera_timeline() {
-    use senior_system::crm::service as crm_service;
-    use senior_system::crm::models::TipoEventoTimeline;
+    use gar_system::crm::service as crm_service;
+    use gar_system::crm::models::TipoEventoTimeline;
 
     let pool = common::setup_pool().await.expect("MySQL");
     common::aplicar_migrations().expect("migrations");
@@ -58,7 +58,7 @@ async fn observacao_criar_persiste_e_gera_timeline() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn observacao_editar_incrementa_vezes_editada() {
-    use senior_system::crm::service as crm_service;
+    use gar_system::crm::service as crm_service;
 
     let pool = common::setup_pool().await.expect("MySQL");
     common::aplicar_migrations().expect("migrations");
@@ -96,7 +96,7 @@ async fn observacao_editar_incrementa_vezes_editada() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn tag_atribuir_e_remover() {
-    use senior_system::crm::service as crm_service;
+    use gar_system::crm::service as crm_service;
 
     let pool = common::setup_pool().await.expect("MySQL");
     common::aplicar_migrations().expect("migrations");
@@ -130,7 +130,7 @@ async fn tag_atribuir_e_remover() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn contato_adicionar_unico_principal() {
-    use senior_system::crm::service as crm_service;
+    use gar_system::crm::service as crm_service;
 
     let pool = common::setup_pool().await.expect("MySQL");
     common::aplicar_migrations().expect("migrations");
@@ -165,7 +165,7 @@ async fn contato_adicionar_unico_principal() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn busca_global_encontra_por_nome_cpf_telefone() {
-    use senior_system::crm::service as crm_service;
+    use gar_system::crm::service as crm_service;
 
     let pool = common::setup_pool().await.expect("MySQL");
     common::aplicar_migrations().expect("migrations");
@@ -207,7 +207,7 @@ async fn busca_global_encontra_por_nome_cpf_telefone() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn equipamento_adicionar_com_tipo() {
-    use senior_system::crm::service as crm_service;
+    use gar_system::crm::service as crm_service;
 
     let pool = common::setup_pool().await.expect("MySQL");
     common::aplicar_migrations().expect("migrations");
@@ -247,7 +247,7 @@ async fn equipamento_adicionar_com_tipo() {
 #[tokio::test]
 #[ignore = "requer MySQL real"]
 async fn dashboard_agrega_tudo() {
-    use senior_system::crm::service as crm_service;
+    use gar_system::crm::service as crm_service;
 
     let pool = common::setup_pool().await.expect("MySQL");
     common::aplicar_migrations().expect("migrations");

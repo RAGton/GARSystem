@@ -5,7 +5,7 @@
 #[path = "common.rs"]
 mod common;
 
-use senior_system::operations::{self as ops, TipoEvento};
+use gar_system::operations::{self as ops, TipoEvento};
 
 fn ctx_padrao() -> ops::Contexto {
     ops::Contexto {
@@ -171,15 +171,15 @@ async fn calcular_sla_detecta_violacao() {
 
     // Inserir eventos SLA com intervalo grande (10h de diagnóstico > 1h do SLA default)
     let t0 = chrono::Utc::now() - chrono::Duration::hours(10);
-    senior_system::operations::repository::registrar_evento_sla(
-        os_id, senior_system::operations::TipoSlaEvento::Recebido, t0, Some(1), None,
+    gar_system::operations::repository::registrar_evento_sla(
+        os_id, gar_system::operations::TipoSlaEvento::Recebido, t0, Some(1), None,
     ).expect("rec");
-    senior_system::operations::repository::registrar_evento_sla(
-        os_id, senior_system::operations::TipoSlaEvento::DiagnosticoInicio, t0, Some(1), None,
+    gar_system::operations::repository::registrar_evento_sla(
+        os_id, gar_system::operations::TipoSlaEvento::DiagnosticoInicio, t0, Some(1), None,
     ).expect("diag_ini");
-    senior_system::operations::repository::registrar_evento_sla(
+    gar_system::operations::repository::registrar_evento_sla(
         os_id,
-        senior_system::operations::TipoSlaEvento::DiagnosticoFim,
+        gar_system::operations::TipoSlaEvento::DiagnosticoFim,
         t0 + chrono::Duration::hours(10),
         Some(1),
         None,

@@ -8,7 +8,7 @@
 // Como executar:
 //   cargo run --bin audit-rbac-achado1
 
-use senior_system::servicos::PapelUsuario;
+use gar_system::servicos::PapelUsuario;
 
 // NOTA: o módulo `auth` é privado ao crate. Este binário usa jsonwebtoken
 // diretamente para emular o MESMO comportamento que `criar_token`.

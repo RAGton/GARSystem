@@ -6,8 +6,8 @@
 #[path = "common.rs"]
 mod common;
 
-use senior_system::arquivos::{self as arq, TipoEntidade, TipoArquivo};
-use senior_system::storage;
+use gar_system::arquivos::{self as arq, TipoEntidade, TipoArquivo};
+use gar_system::storage;
 
 fn ctx_padrao() -> arq::ContextoUpload {
     arq::ContextoUpload {
@@ -220,7 +220,7 @@ async fn transcricao_mock_registra_para_audio() {
     common::aplicar_migrations().expect("migrations");
     common::truncate_all(&pool).expect("truncate");
     storage::auto_configurar().expect("storage");
-    senior_system::transcription::auto_configurar();
+    gar_system::transcription::auto_configurar();
 
     let p = arq::ParametrosUpload {
         nome_original: "audio.mp3".into(),

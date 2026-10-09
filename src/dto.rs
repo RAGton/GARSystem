@@ -1,6 +1,6 @@
 // src/dto.rs
 //
-// DTOs (Data Transfer Objects) do Senior System.
+// DTOs (Data Transfer Objects) do GAR System.
 //
 // São apenas structs de serialização. NÃO têm lógica de negócio.
 // Movidos de `src/server.rs` no Sprint P1.5 (Fase 1 - refatoração)

@@ -5,7 +5,7 @@
 #[path = "common.rs"]
 mod common;
 
-use senior_system::financial::{self as fin, OrigemPagar, OrigemReceber, StatusConta};
+use gar_system::financial::{self as fin, OrigemPagar, OrigemReceber, StatusConta};
 
 fn ctx_padrao() -> fin::Contexto {
     fin::Contexto {
@@ -203,8 +203,8 @@ async fn gerar_conta_receber_de_orcamento_aprovado() {
     let oid = conn.last_insert_id() as u32;
 
     // Aprova via hook do cotacao_orcamento
-    use senior_system::cotacao_orcamento::{models::Decisao, service as co_svc};
-    let ctx = senior_system::cotacao_orcamento::Contexto {
+    use gar_system::cotacao_orcamento::{models::Decisao, service as co_svc};
+    let ctx = gar_system::cotacao_orcamento::Contexto {
         usuario_id: Some(1),
         username: Some("teste".into()),
         ip: None,

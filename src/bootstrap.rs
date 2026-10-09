@@ -6,7 +6,7 @@
 //
 // Em P0, o admin era criado com `admin/admin` (problema de segurança).
 // Em P2.6.1, **PROIBIDO** criar admin/admin. O admin é gerado em runtime
-// com senha aleatória (ou usa `SENIOR_BOOTSTRAP_PASSWORD` se setada).
+// com senha aleatória (ou usa `GAR_BOOTSTRAP_PASSWORD` se setada).
 //
 // ## Fluxo
 //
@@ -33,7 +33,7 @@ pub fn garantir_bootstrap() {
 }
 
 fn executar_bootstrap() -> Result<(), ErroAplicacao> {
-    use senior_system::empresa;
+    use gar_system::empresa;
 
     // 1) Verificar se empresa 1 existe
     if !empresa::repository::empresa_existe()? {

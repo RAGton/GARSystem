@@ -5,7 +5,7 @@
 // ## Estratégia
 //
 // - HashMap<user_id, (empresa_id, Vec<permission>, timestamp)>
-// - TTL: 5 minutos (configurável por env `SENIOR_PERMISSION_CACHE_TTL_SECS`)
+// - TTL: 5 minutos (configurável por env `GAR_PERMISSION_CACHE_TTL_SECS`)
 // - Invalidation:
 //   - Login (não cacheia antes de autenticar)
 //   - Logout (invalidar imediatamente)
@@ -48,7 +48,7 @@ pub struct InMemoryPermissionCache {
 
 impl InMemoryPermissionCache {
     pub fn new() -> Self {
-        let ttl_secs = std::env::var("SENIOR_PERMISSION_CACHE_TTL_SECS")
+        let ttl_secs = std::env::var("GAR_PERMISSION_CACHE_TTL_SECS")
             .ok()
             .and_then(|s| s.parse().ok())
             .unwrap_or(DEFAULT_TTL_SECS);

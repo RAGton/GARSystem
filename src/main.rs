@@ -78,7 +78,7 @@ fn main() -> Result<(), eframe::Error> {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([850.0, 500.0])
             .with_resizable(true)
-            .with_title("Senior System - RAG"),
+            .with_title("GAR System - RAG"),
         centered: true,
         ..Default::default()
     };
@@ -87,7 +87,7 @@ fn main() -> Result<(), eframe::Error> {
 
     // A lógica de canais (mpsc) foi completamente removida daqui.
     eframe::run_native(
-        "Senior System - RAG",
+        "GAR System - RAG",
         opcoes_janela,
         Box::new(|cc: &CreationContext| {
             configurar_fontes(&cc.egui_ctx);

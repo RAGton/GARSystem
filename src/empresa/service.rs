@@ -102,7 +102,7 @@ pub fn obter_configuracao_efetiva(empresa_id: i32) -> Result<EmpresaConfiguracao
 /// recém-criada) com senha aleatória forte.
 ///
 /// **Comportamento**:
-///   - Se `SENIOR_BOOTSTRAP_PASSWORD` estiver setada, usa esse valor.
+///   - Se `GAR_BOOTSTRAP_PASSWORD` estiver setada, usa esse valor.
 ///     Caso contrário, gera uma senha aleatória de 32 chars alfanuméricos.
 ///   - Cria o user `admin@local` (NÃO `admin`!) com bcrypt hash.
 ///   - Atribui role ADMIN (não SUPER_ADMIN!) na empresa alvo.
@@ -124,7 +124,7 @@ pub fn bootstrap_seguro(empresa_id: i32) -> Result<EmpresaBootstrap, ErroAplicac
     let username = "admin@local";
 
     // 1) Definir senha
-    let (senha, origem) = match std::env::var("SENIOR_BOOTSTRAP_PASSWORD") {
+    let (senha, origem) = match std::env::var("GAR_BOOTSTRAP_PASSWORD") {
         Ok(s) if !s.is_empty() && s.len() >= 16 => (s, OrigemBootstrap::EnvVar),
         _ => (gerar_senha_aleatoria(), OrigemBootstrap::Aleatoria),
     };
@@ -174,7 +174,7 @@ pub fn bootstrap_seguro(empresa_id: i32) -> Result<EmpresaBootstrap, ErroAplicac
     match origem {
         OrigemBootstrap::EnvVar => {
             tracing::warn!(
-                "🔐 BOOTSTRAP — Empresa {}: admin criado com senha de SENIOR_BOOTSTRAP_PASSWORD. \
+                "🔐 BOOTSTRAP — Empresa {}: admin criado com senha de GAR_BOOTSTRAP_PASSWORD. \
                  NÃO será exibida novamente.",
                 empresa_id
             );
@@ -185,7 +185,7 @@ pub fn bootstrap_seguro(empresa_id: i32) -> Result<EmpresaBootstrap, ErroAplicac
                  Guarde em local seguro (NÃO será exibida novamente):\n  \
                  username: {}\n  \
                  senha: {}\n  \
-                 origem: SENHA ALEATÓRIA (defina SENIOR_BOOTSTRAP_PASSWORD antes de subir para controlar)",
+                 origem: SENHA ALEATÓRIA (defina GAR_BOOTSTRAP_PASSWORD antes de subir para controlar)",
                 empresa_id, username, senha
             );
         }
