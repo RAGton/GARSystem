@@ -211,24 +211,71 @@ impl FromRow for OrdemServico {
                 .ok_or_else(|| FromRowError(row.clone()))?,
             status: row
                 .take("status")
-                .map(|s: String| {
-                    serde_json::from_str(&format!("\"{}\"", s)).unwrap_or(StatusOS::Aberta)
+                .map(|v: Value| {
+                    if v == Value::NULL {
+                        StatusOS::Aberta
+                    } else {
+                        let s: String = mysql::from_value(v);
+                        serde_json::from_str(&format!("\"{}\"", s)).unwrap_or(StatusOS::Aberta)
+                    }
                 })
-                .ok_or_else(|| FromRowError(row.clone()))?,
-            parecer_tecnico: row.take("parecer_tecnico").unwrap_or_default(),
+                .unwrap_or(StatusOS::Aberta),
+            parecer_tecnico: row
+                .take("parecer_tecnico")
+                .map(|v: Value| {
+                    if v == Value::NULL { String::new() } else { mysql::from_value(v) }
+                })
+                .unwrap_or_default(),
             situacao: row
                 .take("situacao")
-                .map(|s: String| {
-                    serde_json::from_str(&format!("\"{}\"", s)).unwrap_or(SituacaoOS::Orcamento)
+                .map(|v: Value| {
+                    if v == Value::NULL {
+                        SituacaoOS::Orcamento
+                    } else {
+                        let s: String = mysql::from_value(v);
+                        serde_json::from_str(&format!("\"{}\"", s)).unwrap_or(SituacaoOS::Orcamento)
+                    }
                 })
-                .ok_or_else(|| FromRowError(row.clone()))?,
-            numero_serie_equipamento: row.take("numero_serie").unwrap_or_default(),
-            observacoes: row.take("observacoes").unwrap_or_default(),
-            nome_tecnico_responsavel: row.take("tecnico_responsavel").unwrap_or_default(),
-            atendente: row.take("atendente").unwrap_or_default(),
-            telefone_cliente: row.take("telefone").unwrap_or_default(),
+                .unwrap_or(SituacaoOS::Orcamento),
+            numero_serie_equipamento: row
+                .take("numero_serie")
+                .map(|v: Value| {
+                    if v == Value::NULL { String::new() } else { mysql::from_value(v) }
+                })
+                .unwrap_or_default(),
+            observacoes: row
+                .take("observacoes")
+                .map(|v: Value| {
+                    if v == Value::NULL { String::new() } else { mysql::from_value(v) }
+                })
+                .unwrap_or_default(),
+            nome_tecnico_responsavel: row
+                .take("tecnico_responsavel")
+                .map(|v: Value| {
+                    if v == Value::NULL { String::new() } else { mysql::from_value(v) }
+                })
+                .unwrap_or_default(),
+            atendente: row
+                .take("atendente")
+                .map(|v: Value| {
+                    if v == Value::NULL { String::new() } else { mysql::from_value(v) }
+                })
+                .unwrap_or_default(),
+            telefone_cliente: row
+                .take("telefone")
+                .map(|v: Value| {
+                    if v == Value::NULL { String::new() } else { mysql::from_value(v) }
+                })
+                .unwrap_or_default(),
             prazo_entrega: row
                 .take("DATE_FORMAT(os.prazo_entrega, '%d/%m/%Y')")
+                .map(|v: Value| {
+                    if v == Value::NULL {
+                        String::new()
+                    } else {
+                        mysql::from_value(v)
+                    }
+                })
                 .unwrap_or_default(),
             horario_abertura: data_chegada.clone().unwrap_or_default(),
             data_chegada: data_chegada.unwrap_or_default(),

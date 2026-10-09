@@ -228,7 +228,7 @@ fn map_erro(e: ErroAplicacao, request_id: Option<String>) -> (StatusCode, AxJson
         }
     };
     // Loga o erro real (sem segredo) para diagnóstico.
-    tracing::error!(target: "api", code = code, request_id = ?request_id, "Erro: {:?}", e);
+        tracing::error!(target: "api", code = code, request_id = ?request_id, "Erro: {:?}", e);
     erro_padrao(code, msg, request_id)
 }
 
