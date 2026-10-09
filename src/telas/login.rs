@@ -286,51 +286,59 @@ impl TelaLogin {
                     |ui| {
                         ui.add_space(SP_XXL + SP_LG);
                         // === CARD DE ATIVAÇÃO (1 linha) ===
-                        // Framed com borda cyan-glow sutil, mostra status + dias
-                        let card_frame = egui::Frame::default()
-                            .fill(cores_tema::SURFACE_ELEV)
-                            .stroke(egui::Stroke::new(1.0, cores_tema::BORDER_FOCUS.gamma_multiply(0.3)))
-                            .corner_radius(egui::CornerRadius::same(6))
-                            .inner_margin(egui::Margin::symmetric(12, 6));
-                        card_frame.show(ui, |ui| {
-                            ui.horizontal(|ui| {
-                                ui.spacing_mut().item_spacing = egui::vec2(SP_SM, 0.0);
-                                // Ponto verde
-                                let dot_pos = ui.next_widget_position() + egui::vec2(4.0, 4.0);
-                                let glow = cores_tema::SUCCESS.linear_multiply(0.15);
-                                painter.add(egui::Shape::circle_filled(dot_pos, 10.0, glow));
-                                painter.add(egui::Shape::circle_filled(dot_pos, 4.0, cores_tema::SUCCESS));
-                                ui.add_space(12.0);
-                                ui.label(
-                                    egui::RichText::new("Licenciado")
-                                        .color(cores_tema::SUCCESS)
-                                        .size(tipografia::FONT_LABEL)
-                                        .strong(),
-                                );
-                                // Separador
-                                ui.label(
-                                    egui::RichText::new("·")
-                                        .color(cores_tema::TEXT_MUTED)
-                                        .size(tipografia::FONT_LABEL),
-                                );
-                                ui.label(
-                                    egui::RichText::new("23 dias restantes")
-                                        .color(cores_tema::CYAN_GLOW)
-                                        .size(tipografia::FONT_LABEL)
-                                        .strong(),
-                                );
-                                ui.label(
-                                    egui::RichText::new("·")
-                                        .color(cores_tema::TEXT_MUTED)
-                                        .size(tipografia::FONT_LABEL),
-                                );
-                                ui.label(
-                                    egui::RichText::new("CNPJ 12.345.678/0001-90")
-                                        .color(cores_tema::TEXT_MUTED)
-                                        .size(tipografia::FONT_LABEL),
-                                );
-                            });
-                        });
+                        // Centralizado horizontalmente + margem lateral do painel
+                        // para não encostar nas bordas. Frame com borda cyan sutil.
+                        let card_w_max = rect.width() - SP_XL * 2.0;
+                        ui.allocate_ui_with_layout(
+                            egui::vec2(card_w_max, 40.0),
+                            egui::Layout::top_down(egui::Align::Center),
+                            |ui| {
+                                let card_frame = egui::Frame::default()
+                                    .fill(cores_tema::SURFACE_ELEV)
+                                    .stroke(egui::Stroke::new(0.5, cores_tema::BORDER_FOCUS.gamma_multiply(0.15)))
+                                    .corner_radius(egui::CornerRadius::same(6))
+                                    .inner_margin(egui::Margin::symmetric(14, 6));
+                                card_frame.show(ui, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.spacing_mut().item_spacing = egui::vec2(SP_SM, 0.0);
+                                        // Ponto verde
+                                        let dot_pos = ui.next_widget_position() + egui::vec2(4.0, 4.0);
+                                        let glow = cores_tema::SUCCESS.linear_multiply(0.15);
+                                        painter.add(egui::Shape::circle_filled(dot_pos, 10.0, glow));
+                                        painter.add(egui::Shape::circle_filled(dot_pos, 4.0, cores_tema::SUCCESS));
+                                        ui.add_space(12.0);
+                                        ui.label(
+                                            egui::RichText::new("Licenciado")
+                                                .color(cores_tema::SUCCESS)
+                                                .size(tipografia::FONT_LABEL)
+                                                .strong(),
+                                        );
+                                        // Separador
+                                        ui.label(
+                                            egui::RichText::new("·")
+                                                .color(cores_tema::TEXT_MUTED)
+                                                .size(tipografia::FONT_LABEL),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new("23 dias restantes")
+                                                .color(cores_tema::CYAN_GLOW)
+                                                .size(tipografia::FONT_LABEL)
+                                                .strong(),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new("·")
+                                                .color(cores_tema::TEXT_MUTED)
+                                                .size(tipografia::FONT_LABEL),
+                                        );
+                                        ui.label(
+                                            egui::RichText::new("CNPJ 12.345.678/0001-90")
+                                                .color(cores_tema::TEXT_MUTED)
+                                                .size(tipografia::FONT_LABEL),
+                                        );
+                                    });
+                                });
+                            },
+                        );
                     },
                 );
             });
