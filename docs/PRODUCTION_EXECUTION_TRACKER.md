@@ -99,3 +99,46 @@ Atualizado a cada ciclo. Não apagar entradas; só adicionar status/data.
 - Continuar com outras telas (pecas/servicos/ordens) end-to-end
 - Auditar `GET /pecas` (404 suspeito)
 
+---
+
+## Ciclo 4 — Práticas Emil Ernerfeldt aplicadas (2026-10-09)
+
+**ID:** UI-EMIL-001
+**Status:** PASSOU
+**Origem:** https://github.com/emilk (criador do egui, eframe, egui_plot)
+
+**Commits aplicados:**
+- `853a110` — feat(login): footer com `warn_if_debug_build`, `powered_by_egui_and_eframe`, hyperlink pro source
+- `26acbb5` — refactor: `let-else` no `logo.rs` + docstrings expandidos em `theme/mod.rs`
+
+**Práticas aplicadas (de 14 listadas):**
+1. `egui::warn_if_debug_build(ui)` no footer do login
+2. `powered_by_egui_and_eframe(ui)` com hyperlinks pros repos oficiais
+3. `let-else` em vez de `match unwrap` (prática egui)
+4. Docstrings expandidos com `# Panics` + `# Example`
+5. Comentário de módulo cita a origem (Emil Ernerfeldt)
+
+**Práticas restantes (não aplicadas — escopo maior):**
+- `global_theme_preference_buttons` (exige refactor de light/dark)
+- `serde::Deserialize` em TelaLogin (exige habilitar feature `persistence` do eframe)
+- `#![warn(clippy::all)]` (vai explodir warnings no dev — adiar)
+- Adicionar `use Trait as _;` em todos os imports de trait
+
+**Próximo passo:** Voltar à execução autônoma do prompt (smoke test OS/orçamento/peças).
+
+---
+
+## Estado geral (ciclo 4)
+
+**`NÃO PRONTO`** para produção, mas:
+- ✅ Builds limpos (cargo build --bin gar/gui/admin: todos exit 0)
+- ✅ 92 testes passed, 0 regressão
+- ✅ 11 commits na branch, working tree clean
+- ✅ P0 #1 (admin sem role) CORRIGIDO
+- ✅ P0 #2 (admin sem permissões) CORRIGIDO
+- ✅ F1 (senha em log) CORRIGIDO
+- ✅ Smoke test E2E: login → criar cliente → listar
+- ⏸️ Smoke test OS/orçamento/estoque: pendente
+- ⏸️ Auth/cookies: pendente auditoria
+- ⏸️ Tenant isolation: pendente auditoria
+
