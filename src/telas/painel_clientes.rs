@@ -135,17 +135,22 @@ impl TelaClientes {
 
         egui::CentralPanel::default()
             .show(ctx, |ui| {
-                ui.heading("Clientes");
+                if crate::telas::componentes::ui_kit::cabecalho(
+                    ui,
+                    "Clientes",
+                    "Gerencie o cadastro e limite de crédito dos seus clientes.",
+                    Some("＋ Novo Cliente"),
+                ) {
+                    self.selecionado = None;
+                    // TODO: mostrar modal/form de novo cliente
+                }
+                
                 ui.horizontal(|ui| {
-                    if ui.button("Novo Cliente").clicked() {
-                        self.selecionado = None;
-                    }
-                    if ui.button("Atualizar lista").clicked() {
+                    if ui.button("↻ Atualizar lista").clicked() {
                         self.disparar_carregamento_clientes(Some(ctx.clone()));
                     }
                 });
-
-                ui.separator();
+                ui.add_space(8.0);
 
                 match estado_clientes {
                     EstadoListaClientes::Carregando => {
