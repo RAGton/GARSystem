@@ -517,10 +517,35 @@ impl TelaLogin {
                             },
                         );
                     });
+                    ui.add_space(SP_XS);
+                    // Práticas egui (Emil): warning visível em dev + link pro código + Powered by
+                    egui::warn_if_debug_build(ui);
+                    ui.horizontal(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(SP_SM, 0.0);
+                        powered_by_egui_and_eframe(ui);
+                        ui.add(egui::Hyperlink::from_label_and_url(
+                            "source",
+                            "https://github.com/RAGton/GARSystem",
+                        ));
+                    });
                 });
             });
     }
+}
 
+/// Prática egui (Emil Ernerfeldt): "Powered by egui + eframe" no rodapé
+/// Reconhece o framework + dá crédito. Idiomático em apps egui.
+fn powered_by_egui_and_eframe(ui: &mut egui::Ui) {
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 0.0;
+        ui.label("Powered by ");
+        ui.hyperlink_to("egui", "https://github.com/emilk/egui");
+        ui.label(" + ");
+        ui.hyperlink_to("eframe", "https://github.com/emilk/egui/tree/master/crates/eframe");
+    });
+}
+
+impl TelaLogin {
     fn iniciar_processo_login(&mut self, ctx: &egui::Context) {
         if self.empresa.is_empty() || self.nome_usuario.is_empty() || self.senha.is_empty() {
             *self.estado.lock().unwrap() = EstadoLogin::Falha {
