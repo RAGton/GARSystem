@@ -224,15 +224,43 @@ impl TelaEstoque {
             ui.end_row();
         });
 
-        if ui.button("Salvar Nova Peça").clicked() {
-            let t = crate::servicos::tenant_padrao();
-            if let Err(e) = crate::banco_de_dados::estoque::criar_peca(t, &self.form_peca) {
-                eprintln!("Erro ao criar peça: {}", e);
-            } else {
-                self.form_peca = Peca::default();
-                self.recarregar_listas();
+        ui.horizontal(|ui| {
+            if ui.button("Salvar peça").clicked() {
+                if self.form_peca.codigo_interno.trim().is_empty()
+                    || self.form_peca.nome.trim().is_empty()
+                {
+                    self.mensagem = Some((
+                        "Informe o código interno e o nome da peça.".to_string(),
+                        false,
+                    ));
+                } else if self.form_peca.preco_venda < 0.0 {
+                    self.mensagem = Some((
+                        "O preço de venda não pode ser negativo.".to_string(),
+                        false,
+                    ));
+                } else {
+                    let t = crate::servicos::tenant_padrao();
+                    match crate::banco_de_dados::estoque::criar_peca(t, &self.form_peca) {
+                        Ok(()) => {
+                            self.form_peca = Peca::default();
+                            self.mensagem = Some((
+                                "Peça cadastrada com sucesso.".to_string(),
+                                true,
+                            ));
+                            self.mostrar_form_nova_peca = false;
+                            self.recarregar_listas();
+                        }
+                        Err(e) => {
+                            self.mensagem = Some((format!("Não foi possível cadastrar a peça: {}", e), false));
+                        }
+                    }
+                }
             }
-        }
+            if ui.button("Cancelar").clicked() {
+                self.mostrar_form_nova_peca = false;
+                self.mensagem = None;
+            }
+        });
     }
 
     fn form_edicao_peca(&mut self, ui: &mut egui::Ui, peca: &mut Peca) {
