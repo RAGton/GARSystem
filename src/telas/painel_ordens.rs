@@ -129,104 +129,99 @@ impl TelaOrdens {
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {
+            crate::telas::componentes::ui_kit::cabecalho(
+                ui,
+                "Ordens de Serviço",
+                "Consulte, edite e crie novas ordens de serviço.",
+                if matches!(self.papel, PapelUsuario::Comercial | PapelUsuario::Administrador) { Some("＋ Nova O.S.") } else { None },
+            );
+
             ui.horizontal(|ui| {
-                ui.label("Buscar:");
-                ui.text_edit_singleline(&mut self.filtro_busca);
-                if ui.button("Limpar").clicked() {
-                    self.filtro_busca.clear();
-                }
-                // Botão criar dentro da área de busca (visível para Comercial/Administrador)
-                use crate::servicos::PapelUsuario::*;
-                if matches!(self.papel, Comercial | Administrador) {
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button("➕ Criar OS").clicked() {
-                            evento_emitido =
-                                Some(AppEvent::NavegarPara(crate::aplicacao::TelaAtiva::CriarOs));
+                ui.label(egui::RichText::new("Buscar:").strong());
+                ui.add_sized([ui.available_width().min(300.0), 34.0], egui::TextEdit::singleline(&mut self.filtro_busca).hint_text("Cliente ou equipamento..."));
+                
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if ui.button("↻ Atualizar").clicked() {
+                        *self.carregando.lock().unwrap() = true;
+                        let ord_clone = Arc::clone(&self.ordens);
+                        let carreg_clone = Arc::clone(&self.carregando);
+                        let ctx_clone = ctx.clone();
+                        let base = self.base.clone();
+                        let token = self.token.clone();
+                        crate::executor::spawn(move || {
+                            let res = gui_services::listar_ordens_paginado(&base, &token, 1, 50);
+                            match res {
+                                Ok(pagina) => {
+                                    let lista: Vec<OrdemServico> = serde_json::from_value(serde_json::Value::Array(pagina.items)).unwrap_or_default();
+                                    *ord_clone.lock().unwrap() = lista;
+                                }
+                                Err(_) => {}
+                            }
+                            *carreg_clone.lock().unwrap() = false;
+                            ctx_clone.request_repaint();
+                        });
+                    }
+                    if matches!(self.papel, PapelUsuario::Comercial | PapelUsuario::Administrador) {
+                        if ui.button("✚ Criar O.S.").clicked() {
+                            evento_emitido = Some(AppEvent::NavegarPara(crate::aplicacao::TelaAtiva::CriarOs));
                         }
-                    });
-                }
+                    }
+                });
             });
-            ui.separator();
+            ui.add_space(10.0);
 
-            egui::ScrollArea::vertical().show(ui, |ui| {
-                egui::Grid::new("grid_os_list")
-                    .num_columns(6)
-                    .striped(true)
-                    .spacing([12.0, 8.0])
-                    .show(ui, |ui| {
-                        ui.label(egui::RichText::new("ID").strong());
-                        ui.label(egui::RichText::new("Cliente").strong());
-                        ui.label(egui::RichText::new("Equipamento").strong());
-                        ui.label(egui::RichText::new("Status").strong());
-                        ui.label(egui::RichText::new("Técnico").strong());
-                        ui.label("");
-                        ui.end_row();
+            let ordens = self.ordens.lock().unwrap().clone();
+            let carregando = *self.carregando.lock().unwrap();
 
-                        let ords = { self.ordens.lock().unwrap().clone() };
-                        for os in &ords {
-                            if self.filtro_busca.is_empty()
-                                || os
-                                    .cliente
-                                    .to_lowercase()
-                                    .contains(&self.filtro_busca.to_lowercase())
-                                || os
-                                    .equipamento
-                                    .to_lowercase()
-                                    .contains(&self.filtro_busca.to_lowercase())
-                            {
-                                ui.label(os.id.to_string());
-                                ui.label(&os.cliente);
-                                ui.label(&os.equipamento);
-                                ui.label(format!("{:?}", os.status));
-                                ui.label(&os.nome_tecnico_responsavel);
+            if carregando && ordens.is_empty() {
+                ui.spinner();
+                ui.label("Carregando ordens de serviço...");
+            } else if ordens.is_empty() {
+                crate::telas::componentes::ui_kit::estado_vazio(
+                    ui,
+                    "📋",
+                    "Nenhuma ordem encontrada",
+                    "Ainda não há ordens de serviço cadastradas ou nenhum resultado para a busca.",
+                    if matches!(self.papel, PapelUsuario::Comercial | PapelUsuario::Administrador) { Some("✚ Criar primeira O.S.") } else { None },
+                );
+            } else {
+                egui::ScrollArea::both().id_salt("scroll_ordens").show(ui, |ui| {
+                    egui::Grid::new("tabela_ordens")
+                        .striped(true)
+                        .min_col_width(120.0)
+                        .spacing([20.0, 8.0])
+                        .show(ui, |ui| {
+                            ui.label(egui::RichText::new("ID").strong());
+                            ui.label(egui::RichText::new("Cliente").strong());
+                            ui.label(egui::RichText::new("Equipamento").strong());
+                            ui.label(egui::RichText::new("Status").strong());
+                            ui.label(egui::RichText::new("Técnico").strong());
+                            ui.label(egui::RichText::new("Ações").strong());
+                            ui.end_row();
 
-                                // Ações por papel
-                                match self.papel {
-                                    PapelUsuario::Tecnico => {
+                            for os in &ordens {
+                                if self.filtro_busca.is_empty() || os.cliente.to_lowercase().contains(&self.filtro_busca.to_lowercase()) || os.equipamento.to_lowercase().contains(&self.filtro_busca.to_lowercase()) {
+                                    ui.label(egui::RichText::new(os.id.to_string()).strong().color(crate::telas::theme::PRIMARY));
+                                    ui.label(&os.cliente);
+                                    ui.label(&os.equipamento);
+                                    ui.label(format!("{:?}", os.status));
+                                    ui.label(&os.nome_tecnico_responsavel);
+
+                                    ui.horizontal(|ui| {
+                                        if ui.button("Ver/Imprimir").clicked() {
+                                            self.os_atual = Some(os.clone());
+                                            self.modal_visualizar_aberto = true;
+                                        }
                                         if ui.button("Gerenciar").clicked() {
                                             evento_emitido = Some(AppEvent::AbrirEditorOS(os.id));
                                         }
-                                    }
-                                    PapelUsuario::Comercial | PapelUsuario::Administrador => {
-                                        ui.horizontal(|ui| {
-                                            if ui.button("Abrir").clicked() {
-                                                evento_emitido =
-                                                    Some(AppEvent::AbrirEditorOS(os.id));
-                                            }
-                                            if ui.button("✚ Criar").clicked() {
-                                                // abre a tela de criação
-                                                evento_emitido = Some(AppEvent::NavegarPara(
-                                                    crate::aplicacao::TelaAtiva::CriarOs,
-                                                ));
-                                            }
-                                            if ui.button("📄 Ver/Imprimir").clicked() {
-                                                // busca a OS por id e abre modal
-                                                let t = crate::servicos::tenant_padrao();
-                                                match crate::servicos::buscar_os_por_id(t, os.id) {
-                                                    Ok(os_full) => {
-                                                        self.os_atual = Some(os_full);
-                                                        self.modal_visualizar_aberto = true;
-                                                    }
-                                                    Err(e) => eprintln!(
-                                                        "Falha ao carregar OS {}: {}",
-                                                        os.id, e
-                                                    ),
-                                                }
-                                            }
-                                        });
-                                    }
-                                    _ => {
-                                        if ui.button("Ver").clicked() {
-                                            evento_emitido = Some(AppEvent::AbrirEditorOS(os.id));
-                                        }
-                                    }
+                                    });
+                                    ui.end_row();
                                 }
-
-                                ui.end_row();
                             }
-                        }
-                    });
-            });
+                        });
+                });
+            }
         });
 
         // Modal de visualização / impressão de OS
