@@ -107,6 +107,7 @@ fn main() -> Result<(), eframe::Error> {
             .with_resizable(true)
             .with_title("GAR System"),
         centered: true,
+        renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
 

@@ -29,7 +29,7 @@ path = "src/bin/audit_rbac_achado1.rs"
 
 # --- Dependências para a Interface Gráfica (GUI) ---
 # Versão especificada por você. O código será compatível com ela.
-eframe = "0.33.0"
+eframe = { version = "0.33.0", features = ["glow"] }
 image = { version = "0.25", features = ["png"] }
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 egui_plot = "0.34.0"
