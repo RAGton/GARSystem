@@ -138,9 +138,30 @@ Atualizado a cada ciclo. Não apagar entradas; só adicionar status/data.
 - ✅ P0 #2 (admin sem permissões) CORRIGIDO
 - ✅ F1 (senha em log) CORRIGIDO
 - ✅ Smoke test E2E: login → criar cliente → listar
-- ⏸️ Smoke test OS/orçamento/estoque: pendente
+- ⏸️ Smoke test OS/orçamento/estoque: **GETs todos 200** (2 OSs, 0 pecas, 0 servicos). POSTs com 422 (validação de schema — DTO exige `telefone` em cliente, `id` em OS).
 - ⏸️ Auth/cookies: pendente auditoria
 - ⏸️ Tenant isolation: pendente auditoria
+- ⏸️ POST validation: corrigir `#[serde(default)]` nos DTOs
+- ⏸️ GUI desktop: GUI não abre por limitação do `glutin 0.32` em Xwayland rootless + carga alta de VM QEMU (`srv-garos` em 162% CPU). Validação via curl funciona. Decisão: seguir com API no ciclo autônomo.
+
+## Ciclo 6 — P0 Resolvido: 500 no `GET /ordens` (2026-10-09)
+
+**ID:** BUG-500-NULL
+**Status:** PASSOU (commit 54e26c2, tag v1.11.1)
+**Evidência:**
+- `GET /ordens` retornava HTTP 500 (panic captado em `JoinError::Panic`)
+- Root cause: `mysql_common 0.35.5` panica em `mysql::from_value::<String>(Value::Null)`
+- `DATE_FORMAT(NULL, ...)` retorna NULL, e como `prazo_entrega` é nullable no schema, a query retornava Null
+- O `unwrap_or_default()` em `Option<Value>` **não protege** contra `Some(Null)`, só contra `None`
+- Fix: padronizar todos os 7 campos String do `from_row_opt` pra tratar `Some(Value::Null)` → `String::new()`:
+  - `status`, `situacao` (eram `StatusOS`/`SituacaoOS`, agora tratam NULL com default)
+  - `parecer_tecnico`, `observacoes`, `nome_tecnico_responsavel`, `atendente`, `telefone_cliente`, `prazo_entrega` (todos `String`, NULL → `""`)
+- Tambem removido debug temporario do `map_erro` e `handler_listar_ordens`
+- `cargo build --bin gar-system-server`: exit 0
+- `cargo test --lib`: 92 passed, 0 failed
+- Smoke test E2E (5 endpoints GET): todos HTTP 200
+
+**Próximo passo:** Investigar e corrigir 2 bugs de validação em POST (`/clientes` exige `telefone`, `/ordens` exige `id` no body) ou seguir com próxima tarefa do tracker.
 
 
 ---
@@ -159,3 +180,20 @@ Atualizado a cada ciclo. Não apagar entradas; só adicionar status/data.
 - *Limitação conhecida:* "Criar/Editar peça" grava direto no banco via chamada de driver no cliente. O refatoramento para API com rotas `POST/PUT /estoque/pecas` ficará para um próximo ciclo a fim de não alterar as assinaturas atuais do backend por estética, conforme requisito.
 
 **Próximo passo:** Estender o padrão moderno da barra e do `ui_kit` (quando criado) para as demais telas (Clientes, Serviços, etc).
+
+---
+
+## Ciclo 5 — Módulo UI Kit e Lotes 1 e 2 (2026-10-09)
+
+**ID:** UI-MOD-002
+**Status:** PASSOU
+**Evidência:**
+- Adicionado módulo `src/telas/componentes/ui_kit.rs` com componentes reutilizáveis (`cabecalho` e `estado_vazio`).
+- Lote 1 finalizado e em master: Clientes (`painel_clientes.rs`) e Serviços (`painel_servicos.rs`).
+- Lote 2 finalizado e em master: Ordens de Serviço (`painel_ordens.rs`) e Orçamentos (`painel_orcamentos.rs`).
+- Adotados grids estruturados, layout unificado de títulos com ações, e tratamento padronizado de estados vazio (sem dados falsos, coerente com backend).
+- Resolvidos avisos (warnings) de códigos depreciados do `egui` (ex: `Frame::none` para `Frame::NONE`, `id_source` para `id_salt`, `rounding` para `corner_radius`).
+- Compilation checks aprovados via Nix.
+
+**Próximo passo:** Modernizar o restante (Painel Dashboard, Relatórios, etc.) ou finalizar e empacotar/testar.
+
