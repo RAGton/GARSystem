@@ -552,7 +552,7 @@ pub fn criar_os(tenant_id: i32, os: &mut OrdemServico) -> Result<u32, ErroAplica
             serde_json::to_string(&os.situacao)?.replace('"', ""),
             os.atendente.clone(),
             os.nome_tecnico_responsavel.clone(),
-            os.prazo_entrega.clone(),
+            if os.prazo_entrega.is_empty() { None } else { Some(os.prazo_entrega.clone()) },
         ),
     )
     .map_err(ErroAplicacao::from)?;

@@ -97,6 +97,38 @@ struct AtualizarOrdemPayload {
     usuario: String,
 }
 
+/// DTO para criar uma OS via API. Usa cliente_id e equipamento_id
+/// (FKs) em vez de strings, evitando DTO enorme com 21 campos.
+#[derive(Deserialize)]
+struct CriarOrdemPayload {
+    cliente_id: u32,
+    equipamento_id: u32,
+    defeito_relatado: String,
+    observacoes: Option<String>,
+    parecer_tecnico: Option<String>,
+    atendente: Option<String>,
+    prazo_entrega: Option<String>,
+    situacao: Option<servicos::SituacaoOS>,
+}
+
+/// DTO para criar um orcamento via API.
+#[derive(Deserialize)]
+struct CriarOrcamentoPayload {
+    cliente_id: u32,
+    #[serde(default)]
+    atendente: Option<String>,
+    #[serde(default)]
+    observacoes: Option<String>,
+    items: Vec<OrcamentoItemInput>,
+}
+
+#[derive(Deserialize)]
+struct OrcamentoItemInput {
+    servico_id: u32,
+    quantidade: u32,
+    valor_unitario: f64,
+}
+
 #[derive(Deserialize)]
 struct ClientePayload {
     nome: String,
@@ -863,13 +895,22 @@ async fn handler_obter_ordem(
 
 async fn handler_criar_ordem_servico(
     claims: Claims,
-    Json(payload): Json<servicos::OrdemServico>,
+    Json(payload): Json<CriarOrdemPayload>,
 ) -> Result<AxJson<servicos::OrdemServico>, (StatusCode, AxJson<ErroApi>)> {
     check_perm(&claims, "os.create")?;
     let tenant = auth::tenant_do_usuario(&claims);
-    let mut payload_for_create = payload;
+    let dto = servicos::CriarOrdemDTO {
+        cliente_id: payload.cliente_id,
+        equipamento_id: payload.equipamento_id,
+        defeito_relatado: payload.defeito_relatado,
+        observacoes: payload.observacoes,
+        parecer_tecnico: payload.parecer_tecnico,
+        atendente: payload.atendente,
+        prazo_entrega: payload.prazo_entrega,
+        situacao: payload.situacao,
+    };
     let create_res = tokio::task::spawn_blocking(move || {
-        servicos::criar_ordem_servico(tenant, &mut payload_for_create)
+        servicos::criar_ordem_servico_dto(tenant, &dto)
     })
     .await;
     match create_res {

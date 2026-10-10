@@ -1,5 +1,6 @@
 // src/servicos.rs
 
+use mysql::prelude::Queryable;
 use mysql::FromRowError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error; // Necessário para a conversão de erros
@@ -355,6 +356,81 @@ pub fn atualizar_os(
 
 pub fn criar_ordem_servico(tenant_id: i32, os: &mut OrdemServico) -> Result<u32, ErroAplicacao> {
     crate::banco_de_dados::ordem_servico::criar_os(tenant_id, os)
+}
+
+/// DTO leve para criar uma OS a partir do handler HTTP.
+/// Usa IDs (FKs) em vez do OrdemServico inteiro (21 campos).
+pub struct CriarOrdemDTO {
+    pub cliente_id: u32,
+    pub equipamento_id: u32,
+    pub defeito_relatado: String,
+    pub observacoes: Option<String>,
+    pub parecer_tecnico: Option<String>,
+    pub atendente: Option<String>,
+    pub prazo_entrega: Option<String>,
+    pub situacao: Option<SituacaoOS>,
+}
+
+pub fn criar_ordem_servico_dto(
+    tenant_id: i32,
+    dto: &CriarOrdemDTO,
+) -> Result<u32, ErroAplicacao> {
+    // Busca nome do cliente e telefone para preencher OrdemServico
+    let cliente = crate::banco_de_dados::obter_cliente_por_id(tenant_id, dto.cliente_id)
+        .map_err(|_| ErroAplicacao::BancoDeDadosQuery("cliente nao encontrado".into()))?;
+    // Resolve nome do equipamento (exec_first retorna None se vazio)
+    let equip_descricao: String = {
+        let mut conn = crate::banco_de_dados::conexao::obter_conexao()?;
+        let row: Option<(String, Option<String>)> = conn.exec_first(
+            "SELECT descricao, numero_serie FROM equipamentos WHERE id = ? AND tenant_id = ?",
+            (dto.equipamento_id, tenant_id),
+        )?;
+        row.ok_or_else(|| {
+            ErroAplicacao::BancoDeDadosQuery("equipamento nao encontrado".into())
+        })?
+        .0
+    };
+    // Monta OrdemServico
+    let now = chrono::Local::now().format("%d/%m/%Y %H:%M").to_string();
+    // Converte prazo_entrega (DD/MM/YYYY) para ISO se nao for vazio
+    let prazo_iso: Option<String> = match dto.prazo_entrega.as_deref() {
+        Some(s) if !s.trim().is_empty() => {
+            // Tenta parsear DD/MM/YYYY (com ou sem hora)
+            let formats = ["%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"];
+            let mut parsed: Option<chrono::NaiveDate> = None;
+            for fmt in formats {
+                if let Ok(d) = chrono::NaiveDate::parse_from_str(s.trim(), fmt) {
+                    parsed = Some(d);
+                    break;
+                }
+            }
+            parsed.map(|d| d.format("%Y-%m-%d").to_string())
+        }
+        _ => None,
+    };
+    let mut os = OrdemServico {
+        id: 0,
+        cliente: cliente.nome.clone(),
+        equipamento: equip_descricao,
+        defeito_relatado: dto.defeito_relatado.clone(),
+        status: StatusOS::Aberta,
+        parecer_tecnico: dto.parecer_tecnico.clone().unwrap_or_default(),
+        situacao: dto.situacao.clone().unwrap_or(SituacaoOS::Orcamento),
+        numero_serie_equipamento: String::new(),
+        observacoes: dto.observacoes.clone().unwrap_or_default(),
+        nome_tecnico_responsavel: String::new(),
+        atendente: dto.atendente.clone().unwrap_or_default(),
+        horario_abertura: now.clone(),
+        telefone_cliente: cliente.telefone.clone(),
+        data_chegada: now,
+        prazo_entrega: prazo_iso.unwrap_or_default(),
+        historico_edicoes: vec![],
+        pecas: vec![],
+        total_pecas: 0.0,
+        servicos: vec![],
+        total_servicos: 0.0,
+    };
+    crate::banco_de_dados::ordem_servico::criar_os(tenant_id, &mut os)
 }
 
 // Orçamentos: facades para criar/obter orçamentos (P2.6.2a)
