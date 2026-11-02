@@ -72,3 +72,4 @@ secrets/
 examples/
 logo.png.legacy
 .env.host
+.hindsight/
